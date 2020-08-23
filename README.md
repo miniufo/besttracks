@@ -1,7 +1,7 @@
 @(Computer)[python, programing, BestTracks]
 # besttracks
 
-[tracks plot](./pics/Global_TC_tracks.png)
+[tracks plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/Global_TC_tracks.png)
 
 
 ## 1. Introduction
@@ -61,7 +61,7 @@ print(TCs_CMA)
 TCs_CMA.plot_tracks()
 ```
 
-[tracks plot](./pics/tracks_cma.png)
+[tracks plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/tracks_cma.png)
 
 ---
 
@@ -77,6 +77,6 @@ print(tc)
 # Plot the TC track and intensity
 tc.plot()
 ```
-[tc plot](./pics/tc_plot.png)
+[tc plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/tc_plot.png)
 
 
