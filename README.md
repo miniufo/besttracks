@@ -1,7 +1,6 @@
-@(Computer)[python, programing, BestTracks]
 # besttracks
 
-[tracks plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/Global_TC_tracks.png)
+![tracks plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/Global_TC_tracks.png)
 
 
 ## 1. Introduction
@@ -20,11 +19,11 @@ https://www.ncdc.noaa.gov/ibtracs/
 
 | RSMC | WNP | NEP | NAT | NIO | SIO | WSP | SAT |
 | :----: | ---:| :--: | -- | --- | ---:| :--: |--- |
-| JTWC | ?? |  |  | ?? | ?? | ?? |  |
-| CMA | ?? |  |  |  |  |  |  |
-| JMA | ?? |  |  |  |  |  |  |
-| NHC |  | ?? | ?? |  |  |  |  |
-| IBTrACS | ?? | ?? | ?? | ?? | ?? |  | ?? |
+| JTWC | ¡Ì |  |  | ¡Ì | ¡Ì | ¡Ì |  |
+| CMA | ¡Ì |  |  |  |  |  |  |
+| JMA | ¡Ì |  |  |  |  |  |  |
+| NHC |  | ¡Ì | ¡Ì |  |  |  |  |
+| IBTrACS | ¡Ì | ¡Ì | ¡Ì | ¡Ì | ¡Ì |  | ¡Ì |
 
 
 Unfortunately, different agencies use different data formats.  This python-based project **`besttracks`**, aims to provide a unified interface to access these datasets in different formats, and organizes them into a unified data structure called TCSet and TC, which are based on `pandas.DataFrame` that are convient for python users.  Simple plot of track and intensity is also easy and some basic statistics are also provided.
@@ -61,7 +60,7 @@ print(TCs_CMA)
 TCs_CMA.plot_tracks()
 ```
 
-[tracks plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/tracks_cma.png)
+![tracks plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/tracks_cma.png)
 
 ---
 
@@ -77,6 +76,6 @@ print(tc)
 # Plot the TC track and intensity
 tc.plot()
 ```
-[tc plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/tc_plot.png)
+![tc plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/tc_plot.png)
 
 
