@@ -19,14 +19,14 @@ https://www.ncdc.noaa.gov/ibtracs/
 
 | RSMC | WNP | NEP | NAT | NIO | SIO | WSP | SAT |
 | :----: | ---:| :--: | -- | --- | ---:| :--: |--- |
-| JTWC | ¡Ì |  |  | ¡Ì | ¡Ì | ¡Ì |  |
-| CMA | ¡Ì |  |  |  |  |  |  |
-| JMA | ¡Ì |  |  |  |  |  |  |
-| NHC |  | ¡Ì | ¡Ì |  |  |  |  |
-| IBTrACS | ¡Ì | ¡Ì | ¡Ì | ¡Ì | ¡Ì |  | ¡Ì |
+| JTWC | X |  |  | X | X | X |  |
+| CMA | X |  |  |  |  |  |  |
+| JMA | X |  |  |  |  |  |  |
+| NHC |  | X | X |  |  |  |  |
+| IBTrACS | X | X | X | X | X |  | X |
 
 
-Unfortunately, different agencies use different data formats.  This python-based project **`besttracks`**, aims to provide a unified interface to access these datasets in different formats, and organizes them into a unified data structure called TCSet and TC, which are based on `pandas.DataFrame` that are convient for python users.  Simple plot of track and intensity is also easy and some basic statistics are also provided.
+Unfortunately, different agencies use different data formats.  This python-based project **`besttracks`**, aims to provide a unified interface to access these datasets in different formats, and organizes them into a unified data structure called **`TCSet`** and **`TC`**, which are based on `pandas.DataFrame` that are convient for python users.  Simple plot of track and intensity is also easy and some basic statistics are also provided.
 
 Up to now, the datasets from the above agencies are supported.  It would be good to add more agencies and more formats.  We also provide the parser function for CMA operational forecast data (BABJ format), which is also popular in China.
 
@@ -46,12 +46,12 @@ git clone https://github.com/miniufo/besttracks.git
 
 ## 3. Examples
 ### 3.1 Best-track datasets manipulations
-Parsing best-track dataset **IBTrACS** into `TCSet` would be as simple as:
+Parsing best-track dataset **CMA** into `TCSet` would be as simple as:
 ```python
-from besttracks import parse_TC
+from besttracks import parse_TCs
 
 # parse dataset from CMA
-TCs_CMA = parse_TC('./CH*.txt', agency='CMA')
+TCs_CMA = parse_TCs('./CH*.txt', agency='CMA')
 
 # Brief describe the dataset
 print(TCs_CMA)
