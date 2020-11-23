@@ -79,4 +79,4 @@ tc.plot()
 ![tc plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/tc_plot.png)
 
 
-More examples can be found at this [notebook](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/Global_TC_tracks.png)
+More examples can be found at this [notebook](https://raw.githubusercontent.com/miniufo/besttracks/master/notebooks/QuickGuide.ipynb)
