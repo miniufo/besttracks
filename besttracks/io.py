@@ -12,7 +12,7 @@ import os
 from datetime import datetime, timedelta
 from glob import glob
 from pathlib import Path
-from .core import TCSet, TC
+from .core import TCSet, TC, Drifter, DrifterSet
 
 undef = -9999.0
 
@@ -37,7 +37,8 @@ data (BABJ format).
 
 IO realted methods are defined below.
 """
-def parse_TCs(filename, cond=None, agency='CMA', wndunit='knot'):
+def parse_TCs(filename, rec_cond=None, tc_cond=None,
+              agency='CMA', wndunit='knot'):
     """
     Parse TC Best-Track data from various agents.
 
@@ -46,9 +47,12 @@ def parse_TCs(filename, cond=None, agency='CMA', wndunit='knot'):
     filename: str or sequence
         Either a string glob in the form ``"path/to/my/files/*.txt"`` or an
         explicit list of files to open.
-    cond: (lambda) expression
+    rec_cond: lambda expression
         Used by pandas.dataframe.loc[cond].  Example like:
         `lambda df:df['TIME'].dt.hour.isin([0, 6, 12, 18])`
+    tc_cond: lambda expression
+        Used to filter the TCs.  Example like:
+        `lambda tc: tc.year == 2018`
     agency: str
         string for the data agencies, availables are
         ['JTWC', 'JMA', 'CMA', 'NHC', 'IBTrACS', 'BABJ'].
@@ -64,7 +68,7 @@ def parse_TCs(filename, cond=None, agency='CMA', wndunit='knot'):
     if wndunit not in ['knot', 'm/s']:
         raise Exception('invalid wind unit {0:s}, should be "knot" or "m/s"'
                         .format(wndunit))
-
+    
     if agency == 'CMA': ############## CMA ###############
         data = parseCMA(filename)
         # change wind unit to knot
@@ -122,7 +126,7 @@ def parse_TCs(filename, cond=None, agency='CMA', wndunit='knot'):
     
     # change dtypes to save memory
     data = data.astype({'LAT': np.float32, 'LON': np.float32,
-                        'WND': np.float32, 'PRS': np.float32})
+                        'WND': np.float32, 'PRS': np.float32}, copy=False)
     
     if 'IDtmp' in data:
         # unique for CMA, JTWC
@@ -137,8 +141,8 @@ def parse_TCs(filename, cond=None, agency='CMA', wndunit='knot'):
         DATA.reset_index(drop=True, inplace=True)
         
         # data cleaning using condition
-        if cond is not None:
-            DATA = DATA.loc[cond]
+        if rec_cond is not None:
+            DATA = DATA.loc[rec_cond]
             DATA.reset_index(drop=True, inplace=True)
             
             if len(DATA) == 0:
@@ -151,10 +155,15 @@ def parse_TCs(filename, cond=None, agency='CMA', wndunit='knot'):
         if agency == 'BABJ': # operational
             for time, fcstdata in DATA.groupby('TIME'):
                 tc = TC(ID, name, year, wndunit, time,
-                        fcstdata.drop(columns=['ID', 'TIME', 'NAME'])
+                        fcstdata.drop(columns=['ID', 'NAME'])
                              .reset_index(drop=True))
-                TCs.append(tc)
-
+                
+                if tc_cond != None:
+                    if tc_cond(tc):
+                        TCs.append(tc)
+                else:
+                    TCs.append(tc)
+                
         else: # Best Track
             drops = ['ID', 'NAME']
             
@@ -163,10 +172,106 @@ def parse_TCs(filename, cond=None, agency='CMA', wndunit='knot'):
                 
             tc = TC(ID, name, year, wndunit, 0,
                     DATA.drop(columns=drops).reset_index(drop=True))
-        
-        TCs.append(tc)
+            
+            if tc_cond != None:
+                if tc_cond(tc):
+                    TCs.append(tc)
+            else:
+                TCs.append(tc)
     
     return TCSet(TCs, agency=agency)
+
+
+def parse_GDPDrifters(filenames, full=False, chunksize=None, rawframe=False,
+                      rec_cond=None, dr_cond=None):
+    """
+    Parse the drifter data file (ASCII) from NOAA into a pandas.DataFrame.
+    
+    Reference: https://www.aoml.noaa.gov/phod/gdp/buoydata_header.php
+    
+    Parameters
+    ----------
+    filename: str
+        The file name of the CMA Best-Track data.
+    full: bool
+        Return full variables including uncertainties (default False).
+    chunksize: int
+        Chunk size for reading (default no chunk and read in all).
+    rawframe: bool
+        Return raw pandas.DataFrame or return drifters as a DrifterSet.
+    rec_cond: lambda expression
+        Used by pandas.dataframe.loc[cond].  Example like:
+        `lambda df:df['TIME'].dt.hour.isin([0, 6, 12, 18])`
+    dr_cond: lambda expression
+        Used to filter the drifters.  Example like:
+        `lambda dr: dr[0].LON < 120`
+
+    Returns
+    -------
+    re: pandas.DataFrame
+        Raw data in a pandas.DataFrame.
+    """
+    if full:
+        cols = [( 0, 8), (10, 25), (28, 35), (38,  45), ( 47,  56), (57, 65),
+                (67,75), (76, 85), (86, 98), (99, 111), (112, 124)]
+        colN = ['ID', 'TIME', 'LAT', 'LON', 'SST', 'U', 'V', 'SPD',
+                'VarLat', 'VarLon', 'VarT']
+        dtyp = {'LAT': np.float32, 'LON': np.float32, 'Varlat': np.float32,
+                'SST': np.float32, 'U'  : np.float32, 'Varlon': np.float32,
+                'V'  : np.float32, 'SPD': np.float32, 'VarT'  : np.float32}
+    else:
+        cols = [( 0,  8), (10, 25), (28, 35), (38, 45), (47, 56),
+                (57, 65), (67, 75), (76, 85)]
+        colN = ['ID', 'TIME', 'LAT', 'LON', 'SST', 'U', 'V', 'SPD']
+        dtyp = {'LAT': np.float32, 'LON': np.float32, 'SST': np.float32,
+                'U'  : np.float32, 'V'  : np.float32, 'SPD': np.float32}
+    
+    if chunksize == None:
+        iters = [pd.read_fwf(f, header=None, colspecs=cols, names=colN,
+                             parse_dates=['TIME'], dtype=dtyp,
+                             date_parser=__parse_datetime)
+                 for f in glob(filenames)]
+    else:
+        iters = [pd.read_fwf(f, header=None, colspecs=cols, names=colN,
+                             parse_dates=['TIME'], iterator=True,
+                             chunksize=chunksize, dtype=dtyp,
+                             date_parser=__parse_datetime)
+                 for f in glob(filenames)]
+        
+    data = pd.concat([chunk[rec_cond] for chunks in iters for chunk in chunks])
+    
+    if rawframe:
+        return data
+    
+    data = data.astype(dtyp, copy=False)
+    
+    groups = data.groupby('ID')
+    
+    drifters = []
+    
+    for ID, records in groups:
+        if len(records) <  2:
+            raise Exception('only one record is found')
+        elif len(records) == 2:
+            if records['TIME'].diff().reset_index()['TIME'].loc[1] != \
+                pd.Timedelta(value=6, unit='H'):
+                    raise Exception('not 6hr interval\n' + str(records))
+        else:
+            freq = pd.infer_freq(records['TIME'])
+        
+        if freq != '6H':
+            raise Exception('drifter (ID: {0:8d}) is not 6hr interval'
+                            .format(freq))
+        
+        records.drop(columns='ID', inplace=True)
+        # records = records.reset_index()
+        
+        dr = Drifter(str(ID), records)
+        
+        if dr_cond(dr):
+            drifters.append(dr)
+        
+    return DrifterSet(drifters)
 
 
 def parseNHC(filename, encoding='utf-8'):
@@ -222,7 +327,7 @@ def parseNHC(filename, encoding='utf-8'):
                     LAT  = float(ln[22:27].strip())
                     LON  = float(ln[30:35].strip())
                     PRS  = float(ln[43:47].strip())
-                    WND  = float(ln[39:41].strip())
+                    WND  = float(ln[38:41].strip())
 
                     if ln[35:36] == 'W':
                         LON = 360 - LON
@@ -230,7 +335,7 @@ def parseNHC(filename, encoding='utf-8'):
                     if PRS == -999:
                         PRS = undef
 
-                    if WND == -999:
+                    if WND == -99 or WND == -999:
                         WND = undef
                     
                     re.append((ID, NAME, TIME, LAT, LON, TYPE, PRS, WND))
@@ -563,7 +668,7 @@ def parseJTWC(filenames, encoding='utf-8'):
                 else:
                     PRS = float(tmp)
                 
-                if WND == '-999':
+                if WND == -999:
                     WND = undef
                 
                 re.append((IDtmp, ID, 'NONAME', TIME, LAT, LON, PRS, WND))
@@ -799,6 +904,43 @@ def __get_type_NHC(code):
     """
     return code
 
+
+def __parse_datetime(text):
+    """
+    Parse datetime string into np.datetime64.
+
+    Reference: https://www.aoml.noaa.gov/phod/gdp/buoydata_header.php
+
+    Parameters
+    ----------
+    text: str
+        The string text for datetime.
+
+    Returns
+    -------
+    re: pd.Timestamp
+        A object of Timestamp.
+    """
+    tokens1 = text.split()
+    tokens2 = tokens1[1].split('.')
+    mo = int(tokens1[0])
+    dy = int(tokens2[0])
+    hr = tokens2[1]
+    yr = int(tokens1[2])
+    
+    if   hr == '000':
+        hr = 0
+    elif hr == '250':
+        hr = 6
+    elif hr == '500':
+        hr = 12
+    elif hr == '750':
+        hr = 18
+    else:
+        raise Exception('invalid hour {0:s}, should be [.000, .250, .500, .750]'
+                        .format(hr))
+    
+    return pd.Timestamp(yr, mo, dy, hr)
 
 
 """

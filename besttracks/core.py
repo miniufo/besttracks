@@ -6,7 +6,6 @@ Created on 2020.08.01
 Copyright 2018. All rights reserved. Use is subject to license terms.
 """
 import numpy as np
-from .utils import plot_track, plot_intensity, plot
 
 undef = -9999.0
 
@@ -14,183 +13,154 @@ undef = -9999.0
 """
 Data structs for Best-Track data (TC) and forecast data (TCfcst)
 """
-# Storm = namedtuple('Storm', ['ID', 'name', 'year', 'fcstTime', 'data'])
 
-# TCType = np.dtype([('ID'      , np.str_, 6),
-#                    ('name'    , np.str_, 15),
-#                    ('year'    , np.int32),
-#                    ('fcstTime', np.int16),
-#                    ('data'    , pd.DataFrame)])
-
-
-class TCSet(object):
+class Particle(object):
     """
-    This class represents a set of tropical cyclones (TCs).
+    This class represents a single Lagrangian particle.
     """
-    def __init__(self, TCs, agency=None):
+    def __init__(self, ID, records):
         """
         Constructor.
         
         Parameters
         ----------
-        TCs: list
-            A list of TCs.
-        agency: str
-            agency that provide the data e.g., ['CMA', 'JMA', 'JTWC',
-                                                'NHC', 'IBTrACS']
+        ID: str
+            Unique ID of the particle.
+        records: pandas.DataFrame
+            Records of the particle.
 
         Returns
         ----------
-        TCs : TCSet
-            A set of TCs
+        p: Particle
+            A single Lagrangian particle
         """
-        self.TCs    = TCs
-        self.agency = agency
+        self.ID = ID
+        self.records = records
     
-    def plot_tracks(self, **kwargs):
-        from besttracks.besttracks import plot_tracks
-        return plot_tracks(self, **kwargs)
     
-    def total_cyclone_days(self):
+    def sel(self, cond, copy=True):
         """
-        Get total cyclone days of this TCSet.
-        """
-        return sum([tc.duration() for tc in self.TCs])
-    
-    def change_wind_unit(self, unit=None):
-        """
-        Change (in-place) the wind unit between knot and m/s.
+        Select records meet a given condition.  Similar to DataFrame.sel().
         
         Parameters
         ----------
-        unit: str
-            Either knot or m/s.
+        cond: lambda expression
+            Condition that records should meet e.g.,:
+            1. Choose standard UTC times
+               cond = lambda df: df['TIME'].dt.hour.isin([0, 6, 12, 18])
+            2. Choose records in year 2010
+               cond = lambda df: df['TIME'].dt.year == 2010
+            3. Choose records with wind above 30
+               cond = lambda df: df['WND'] > 30
+            4. Drop records with wind being 0
+               cond = lambda df: df['WND'] != 0
+            5. Choose records inside a region:
+               cond = lambda df: (df['LON'] > 90 & df['LON'] < 180 &
+                                  df['LAT'] >  0 & df['LAT'] < 50)
+        
+        Returns
+        ----------
+        re: pandas.DataFrame
+            A new particle containing the records satisfying the conditions
         """
-        for tc in self.TCs:
-            tc.change_wind_unit(unit=unit)
+        re = self.copy(copy_records=False)
         
-            if unit != None:
-                tc.wndunit = unit
-            else:
-                if tc.wndunit == 'knot':
-                    tc.wndunit = 'm/s'
-                else:
-                    tc.wndunit = 'knot'
+        re.records = self.records.loc[cond].reset_index(drop=True)
         
-        return self
+        return re
+    
+    
+    def duration(self):
+        """
+        Get duration (days) of this particle.
+
+        Returns
+        ----------
+        re: float
+            Duration of this particle in unit of day
+        """
+        duration = np.ptp(self.records['TIME'])
+        return duration.astype('timedelta64[h]').astype(int) / 24.0
+    
+    
+    def plot_track(self, **kwargs):
+        """
+        Plot the track of this particle.
+        """
+        from .utils import plot_track
+        return plot_track(self, **kwargs)
+    
+    def binning(self, var=None, **kwargs):
+        """
+        Plot the track and intensity of the TC.
+        """
+        from .utils import binning_particle
+        return binning_particle(self, var=var, **kwargs)
+        
+    
+    def copy(self, copy_records=True):
+        """
+        Make a copy of the current particle.
+
+        Parameters
+        ----------
+        copy_records: bool
+            Copy the records or not.
+
+        Returns
+        ----------
+        re: particle
+            A copy of this particle.
+        """
+        s = self
+        
+        if copy_records:
+            re = type(self)(s.ID, s.records.copy())
+        else:
+            re = type(self)(s.ID, None)
+        
+        return re
     
     
     def __len__(self):
         """
-        Get the number of TCs.
+        Get the number of records.
         """
-        return self.TCs.__len__()
+        return self.records.__len__()
+    
+    def __iter__(self):
+        """
+        Iterator.
+        """
+        return self.records.itertuples()
+    
     
     def __getitem__(self, key):
         """
-        Used to iterate over the whole TCSet.
+        Used to iterate over the particle record.
         """
-        return self.TCs[key]
+        if isinstance(key, int):
+            return self.records.iloc[[key]]
+        elif isinstance(key, str):
+            if key in ['ID']:
+                return self.__dict__[key]
+            else:
+                return self.records[key]
+        else:
+            raise Exception('invalid type of key, should be int or str')
     
     def __repr__(self):
         """
-        Used to print the TC dataset.
+        Used to print the Drifter.
         """
-        info = []
+        s = self
         
-        if self.agency == None:
-            info.append('TC best-track dataset:\n')
-        else:
-            info.append('TC best-track dataset ({0:s}):\n'.format(self.agency))
-            
-        info.append('  {0:1d} TCs from {1:4d} to {2:4d}, {3:6.1f} cyclone days\n'
-                    .format(len(self.TCs), self.TCs[0].year,
-                            self.TCs[-1].year, self.total_cyclone_days()))
+        info = ('Particle (ID={0:8s})\n').format(str(s.ID))
         
-        minTC, maxTC = self.__find_duration_extrema()
-        
-        info.append('  longest   TC {0:s}, {1:9s}: {2:5.2f} days \n'.format(
-                    maxTC.ID, maxTC.name, maxTC.duration()))
-        info.append('  shortest  TC {0:s}, {1:9s}: {2:5.2f} days \n'.format(
-                    minTC.ID, minTC.name, minTC.duration()))
-        
-        minTC, maxTC = self.__find_intensity_extrema()
-        
-        minP, maxW = maxTC.peak_intensity()
-        unit = maxTC.wndunit
-        info.append('  strongest TC {0:s}, {1:9s}: {2:5.0f} hPa, {3:5.1f} {4:s}\n'
-                    .format(maxTC.ID, maxTC.name, minP, maxW, unit))
-        
-        minP, maxW = minTC.peak_intensity()
-        unit = maxTC.wndunit
-        info.append('  weakest   TC {0:s}, {1:9s}: {2:5.0f} hPa, {3:5.1f} {4:s}\n'
-                    .format(minTC.ID, minTC.name, minP, maxW, unit))
-        
-        return ''.join(info)
-    
-    def __find_intensity_extrema(self):
-        """
-        Find strongest and weakest TCs.
-        
-        Returns
-        ----------
-        minTC, maxTC: tuple
-            Weakest and strongest TCs
-        """
-        minWd, maxWd = -undef, undef
-        minPr, maxPr = -undef, undef
-        minTC, maxTC =  None,  None
-        
-        for tc in self.TCs:
-            minP, maxW = tc.peak_intensity()
-            
-            if maxW != undef:
-                if maxW > maxWd:
-                    maxWd = maxW
-                    maxTC = tc
-                
-                if maxW < minWd:
-                    minWd = maxW
-                    minTC = tc
-                    
-            else:
-                if minP < minPr:
-                    minPr = minP
-                    maxTC = tc
-                
-                if minP > maxPr:
-                    maxPr = minP
-                    minTC = tc
-        
-        return minTC, maxTC
-    
-    def __find_duration_extrema(self):
-        """
-        Find minimum and maximum durations of TCs.
-        
-        Returns
-        ----------
-        minTC, maxTC: tuple
-            Minimum and maximum duration TCs
-        """
-        minDr, maxDr = -undef, undef
-        minTC, maxTC =  None , None
-        
-        for tc in self.TCs:
-            duration = tc.duration()
-            
-            if duration < minDr:
-                minDr = duration
-                minTC = tc
-                
-            if duration > maxDr:
-                maxDr = duration
-                maxTC = tc
-        
-        return minTC, maxTC
+        return info + s.records.__repr__()
 
 
-class TC(object):
+class TC(Particle):
     """
     This class represents a single tropical cyclone (TC).
     """
@@ -218,60 +188,15 @@ class TC(object):
         TC: TC
             A single TC
         """
-        self.ID = ID
+        super().__init__(ID, records)
+        
         self.name = name
         self.year = year
-        self.records = records
         self.wndunit = wndunit.lower()
         self.fcstTime = fcstTime
         
         if wndunit not in ['knot', 'm/s']:
             raise Exception('invalid wind unit, should be "knot" or "m/s"')
-    
-    
-    def sel(self, cond):
-        """
-        Select records meet a given condition.  Similar to DataFrame.sel().
-        
-        Parameters
-        ----------
-        cond: lambda expression
-            Condition that records should meet e.g.,:
-            1. Choose standard UTC times
-               cond = lambda df: df['TIME'].dt.hour.isin([0, 6, 12, 18])
-            2. Choose records in year 2010
-               cond = lambda df: df['TIME'].dt.year == 2010
-            3. Choose records with wind above 30
-               cond = lambda df: df['WND'] > 30
-            4. Drop records with wind being 0
-               cond = lambda df: df['WND'] != 0
-            5. Choose records inside a region:
-               cond = lambda df: (df['LON'] > 90 & df['LON'] < 180 &
-                                  df['LAT'] >  0 & df['LAT'] < 50)
-        
-        Returns
-        ----------
-        re: TC
-            A new TC containing the records satisfying the conditions
-        """
-        re = self.copy(copy_records=False)
-        
-        re.records = self.records.loc[cond]
-        
-        return re
-    
-    
-    def duration(self):
-        """
-        Get duration (days) of this TC.
-
-        Returns
-        ----------
-        re: float
-            Duration of this TC in unit of day
-        """
-        duration = np.ptp(self.records['TIME'])
-        return duration.astype('timedelta64[h]').astype(int) / 24.0
     
     def change_wind_unit(self, unit=None):
         """
@@ -311,50 +236,18 @@ class TC(object):
         return self
         
     
-    def peak_intensity(self):
+    def ace(self):
         """
-        Get the peak intensity given PRS or WND.
+        Get accumulated cyclone energy (ACE) of this TC.
+        """
+        cond = lambda df: df['TIME'].dt.hour.isin([0, 6, 12, 18])
         
-        Returns
-        ----------
-        re: tuple
-            Peak intensity of pressure and wind
-        """
-        prs = self.records['PRS']
-        wnd = self.records['WND']
+        wnd = self.records.loc[cond]['WND']
         
-        minP, Ppos = min(prs), prs.argmin()
-        maxW, Wpos = max(wnd), wnd.argmax()
+        wnd = wnd.where(wnd!=undef)
         
-        if minP != undef and maxW != undef:
-            if Ppos != Wpos:
-                if prs[Wpos] == minP:
-                    return minP, maxW
-                elif wnd[Ppos] == maxW:
-                    return minP, maxW
-                else:
-                    return min(prs[wnd==maxW]), maxW
+        return (wnd*wnd).sum()
         
-        return minP, maxW
-    
-    
-    def plot_track(self, **kwargs):
-        """
-        Plot the track of the TC.
-        """
-        return plot_track(self, **kwargs)
-    
-    def plot_intensity(self, unit='knot', **kwargs):
-        """
-        Plot the intensity of the TC.
-        """
-        return plot_intensity(self, **kwargs)
-    
-    def plot(self, **kwargs):
-        """
-        Plot the track and intensity of the TC.
-        """
-        plot(self, **kwargs)
     
     def copy(self, copy_records=True):
         """
@@ -373,35 +266,60 @@ class TC(object):
         s = self
         
         if copy_records:
-            re = TC(s.ID, s.name, s.year, s.wndunit, s.fcstTime,
-                    s.records.copy())
+            re = type(self)(s.ID, s.name, s.year, s.wndunit,
+                    s.fcstTime, s.records.copy())
         else:
-            re = TC(s.ID, s.name, s.year, s.wndunit, s.fcstTime, None)
+            re = type(self)(s.ID, s.name, s.year, s.wndunit,
+                    s.fcstTime, None)
         
         return re
+    
+    def peak_intensity(self):
+        """
+        Get the peak intensity given PRS or WND.
         
+        Returns
+        ----------
+        re: tuple
+            Peak intensity of pressure and wind
+        """
+        prs = self.records['PRS']
+        wnd = self.records['WND']
         
+        minP, Ppos = prs.min(), prs.argmin()
+        maxW, Wpos = wnd.max(), wnd.argmax()
+        
+        if minP != undef and maxW != undef:
+            if Ppos != Wpos:
+                if prs[Wpos] == minP:
+                    return minP, maxW
+                elif wnd[Ppos] == maxW:
+                    return minP, maxW
+                else:
+                    return min(prs[wnd==maxW]), maxW
+        
+        return minP, maxW
     
-    def __len__(self):
+    def plot_intensity(self, unit='knot', **kwargs):
         """
-        Get the number of records.
+        Plot the intensity of the TC.
         """
-        return self.records.__len__()
+        from .utils import plot_intensity
+        return plot_intensity(self, **kwargs)
     
-    def __iter__(self):
-        return self.records.itertuples()
-    
-    
-    def __getitem__(self, key):
+    def plot(self, **kwargs):
         """
-        Used to iterate over the TC record.
+        Plot the track and intensity of the TC.
         """
-        if isinstance(key, int):
-            return self.records.iloc[[key]]
-        elif isinstance(key, str):
-            return self.records[key]
-        else:
-            raise Exception('invalid type of key, should be int or str')
+        from .utils import plot
+        plot(self, **kwargs)
+    
+    def plot_track(self, **kwargs):
+        """
+        Plot the track and intensity of the TC.
+        """
+        from .utils import plot_track
+        return plot_track(self, add_legend=True, **kwargs)
     
     def __repr__(self):
         """
@@ -409,10 +327,398 @@ class TC(object):
         """
         s = self
         
-        info = 'TC (ID={0:s}, name={1:s}, year={2:4d}, fcstTime={3:02d})\n' \
-                .format(s.ID, s.name, s.year, s.fcstTime)
+        info = ('TC (ID={0:s}, name={1:s}, year={2:4d}, ' +
+               'fcstTime={3:s}, unit={4:s})\n') \
+                .format(s.ID, s.name, s.year, str(s.fcstTime), s.wndunit)
         
         return info + s.records.__repr__()
+
+
+class Drifter(Particle):
+    """
+    This class represents a single tropical cyclone (TC).
+    """
+    def __init__(self, ID, records):
+        """
+        Constructor.
+        
+        Parameters
+        ----------
+        ID: str
+            Official ID of the drifter.
+        records: pandas.DataFrame
+            Records of the drifter.
+
+        Returns
+        ----------
+        re: drifter
+            A single drifter
+        """
+        super().__init__(ID, records)
+    
+    
+    def __repr__(self):
+        """
+        Used to print the Drifter.
+        """
+        s = self
+        
+        info = ('Drifter (ID={0:8s})\n').format(s.ID)
+        
+        return info + s.records.__repr__()
+
+
+
+class ParticleSet(object):
+    """
+    This class represents a set of Particles.
+    """
+    def __init__(self, particles):
+        """
+        Constructor.
+        
+        Parameters
+        ----------
+        particles: list
+            A list of particles.
+
+        Returns
+        ----------
+        re : ParticleSet
+            A set of particles
+        """
+        self.particles = particles
+    
+    
+    def select(self, cond):
+        """
+        Select drifter(s) given a condition.
+        
+        Parameters
+        ----------
+        cond: lambda expression
+            Whether a drifter meets the condition.
+        """
+        ps = list(filter(cond, self.particles))
+        
+        if ps:
+            return type(self)(ps)
+        else:
+            print('no particles are found')
+    
+    
+    def groupby(self, field):
+        """
+        Group the Particles into different categraries according to field.
+        
+        Parameters
+        ----------
+        field: str
+            field in ['ID'].
+        """
+        from itertools import groupby
+        
+        gs = groupby(self.particles, key=lambda p:p.__getattribute__(field))
+        
+        flds = []
+        sets = []
+        
+        for f, ps in gs:
+            flds.append(f)
+            sets.append(type(self)([p for p in ps]))
+        
+        return zip(flds, sets)
+    
+    
+    def total_duration(self):
+        """
+        Get total duration of this ParticleSet in unit of days.
+        """
+        return sum([p.duration() for p in self.particles])
+    
+    def plot_tracks(self, **kwargs):
+        from .utils import plot_tracks
+        return plot_tracks(self, **kwargs)
+    
+    def binning(self, var=None, **kwargs):
+        """
+        Binning the Eulerian track statistics of this set.
+        """
+        from .utils import binning_particles
+        return binning_particles(self, var=var, **kwargs)
+    
+    
+    def __len__(self):
+        """
+        Get the number of particles.
+        """
+        return self.particles.__len__()
+    
+    def __getitem__(self, key):
+        """
+        Used to iterate over the whole ParticleSet.
+        """
+        return self.particles[key]
+    
+    def __repr__(self):
+        """
+        Used to print the TC dataset.
+        """
+        info = []
+        
+        info.append('Particle dataset:\n')
+        info.append('  {0:2d} particles, {1:6.1f} particle-days\n'
+                    .format(len(self.particles), self.total_duration()))
+        
+        minPa, maxPa = self._find_duration_extrema()
+        
+        info.append('  longest  drifter {0:8s}: {1:5.2f} days \n'.format(
+                    maxPa.ID, maxPa.duration()))
+        info.append('  shortest drifter {0:8s}: {1:5.2f} days \n'.format(
+                    minPa.ID, minPa.duration()))
+        
+        return ''.join(info)
+    
+    def _find_duration_extrema(self):
+        """
+        Find minimum and maximum durations of particles.
+        
+        Returns
+        ----------
+        minPa, maxPa: tuple
+            Minimum and maximum duration particles
+        """
+        minDr, maxDr = -undef, undef
+        minPa, maxPa =  None , None
+        
+        for ps in self.particles:
+            duration = ps.duration()
+            
+            if duration < minDr:
+                minDr = duration
+                minPa = ps
+            
+            if duration > maxDr:
+                maxDr = duration
+                maxPa = ps
+        
+        return minPa, maxPa
+
+class TCSet(ParticleSet):
+    """
+    This class represents a set of tropical cyclones (TCs).
+    """
+    def __init__(self, TCs, agency=None):
+        """
+        Constructor.
+        
+        Parameters
+        ----------
+        TCs: list
+            A list of TCs.
+        agency: str
+            agency that provide the data e.g., ['CMA', 'JMA', 'JTWC',
+                                                'NHC', 'IBTrACS']
+
+        Returns
+        ----------
+        TCs : TCSet
+            A set of TCs
+        """
+        super().__init__(TCs)
+        
+        self.agency = agency
+    
+    def ace(self):
+        """
+        Get accumulated cyclone energy (ACE) of the whole dataset.
+        """
+        return sum([tc.ace() for tc in self.particles])
+    
+    def plot_intensities(self, unit='knot', **kwargs):
+        """
+        Plot the intensities of the TCSet.  This is useful for plotting the
+        ensemble forecasts of a single TC initialized at different times.
+        """
+        from .utils import plot_intensities
+        return plot_intensities(self, **kwargs)
+    
+    def change_wind_unit(self, unit=None):
+        """
+        Change (in-place) the wind unit between knot and m/s.
+        
+        Parameters
+        ----------
+        unit: str
+            Either knot or m/s.
+        """
+        for tc in self.particles:
+            tc.change_wind_unit(unit=unit)
+        
+            # if unit != None:
+            #     tc.wndunit = unit
+            # else:
+            #     if tc.wndunit == 'knot':
+            #         tc.wndunit = 'm/s'
+            #     else:
+            #         tc.wndunit = 'knot'
+        
+        return self
+    
+    
+    def __repr__(self):
+        """
+        Used to print the TC dataset.
+        """
+        if len(self.particles) == 0:
+            return 'No TCs in this TCSet'
+        
+        info = []
+        
+        if self.agency == None:
+            info.append('TC best-track dataset:\n')
+        else:
+            info.append('TC best-track dataset ({0:s}):\n'.format(self.agency))
+        
+        yrs = [p.year for p in self.particles]
+        
+        info.append('  {0:1d} TCs from {1:4d} to {2:4d}, {3:6.1f} cyclone days\n'
+                    .format(len(self.particles), min(yrs),
+                            max(yrs), self.total_duration()))
+        
+        minTC, maxTC = self._find_duration_extrema()
+        
+        info.append('  longest   TC {0:s}, {1:9s}: {2:5.2f} days \n'.format(
+                    maxTC.ID, maxTC.name, maxTC.duration()))
+        info.append('  shortest  TC {0:s}, {1:9s}: {2:5.2f} days \n'.format(
+                    minTC.ID, minTC.name, minTC.duration()))
+        
+        minTC, maxTC = self.__find_intensity_extrema()
+        
+        minP, maxW = maxTC.peak_intensity()
+        unit = maxTC.wndunit
+        info.append('  strongest TC {0:s}, {1:9s}: {2:5.0f} hPa, {3:5.1f} {4:s}\n'
+                    .format(maxTC.ID, maxTC.name, minP, maxW, unit))
+        
+        minP, maxW = minTC.peak_intensity()
+        unit = maxTC.wndunit
+        info.append('  weakest   TC {0:s}, {1:9s}: {2:5.0f} hPa, {3:5.1f} {4:s}\n'
+                    .format(minTC.ID, minTC.name, minP, maxW, unit))
+        
+        minTC, maxTC = self.__find_ace_extrema()
+        
+        maxA = maxTC.ace()
+        unit = maxTC.wndunit
+        info.append('  largest  ACE {0:s}, {1:9s}: {2:5.0f} ({3:s})^2\n'
+                    .format(maxTC.ID, maxTC.name, maxA, unit))
+        
+        minA = minTC.ace()
+        unit = maxTC.wndunit
+        info.append('  smallest ACE {0:s}, {1:9s}: {2:5.0f} ({3:s})^2\n'
+                    .format(minTC.ID, minTC.name, minA, unit))
+        
+        return ''.join(info)
+    
+    def __find_intensity_extrema(self):
+        """
+        Find strongest and weakest TCs.
+        
+        Returns
+        ----------
+        minTC, maxTC: tuple
+            Weakest and strongest TCs
+        """
+        minWd, maxWd = -undef, undef
+        minPr, maxPr = -undef, undef
+        minTC, maxTC =  None,  None
+        
+        for tc in self.particles:
+            minP, maxW = tc.peak_intensity()
+            
+            if maxW != undef:
+                if maxW > maxWd:
+                    maxWd = maxW
+                    maxTC = tc
+                
+                if maxW < minWd:
+                    minWd = maxW
+                    minTC = tc
+                    
+            else:
+                if minP < minPr:
+                    minPr = minP
+                    maxTC = tc
+                
+                if minP > maxPr:
+                    maxPr = minP
+                    minTC = tc
+        
+        return minTC, maxTC
+    
+    def __find_ace_extrema(self):
+        """
+        Find minimum and maximum ACE of TCs.
+        
+        Returns
+        ----------
+        minTC, maxTC: tuple
+            Minimum and maximum duration TCs
+        """
+        minDr, maxDr = -undef, undef
+        minTC, maxTC =  None , None
+        
+        for tc in self.particles:
+            ace = tc.ace()
+            
+            if ace < minDr or minDr == -undef:
+                minDr = ace
+                minTC = tc
+                
+            if ace > maxDr or maxDr == undef:
+                maxDr = ace
+                maxTC = tc
+        
+        return minTC, maxTC
+
+class DrifterSet(ParticleSet):
+    """
+    This class represents a set of surface drifters.
+    """
+    def __init__(self, drifters):
+        """
+        Constructor.
+        
+        Parameters
+        ----------
+        drifters: list
+            A list of drifters.
+
+        Returns
+        ----------
+        re : DrifterSet
+            A set of drifters
+        """
+        super().__init__(drifters)
+    
+    
+    def __repr__(self):
+        """
+        Used to print the drifter dataset.
+        """
+        info = []
+        
+        info.append('drifter dataset:\n')
+        info.append('  {0:2d} drifters, {1:6.1f} drifter-days\n'
+                    .format(len(self.particles), self.total_duration()))
+        
+        minPa, maxPa = self._find_duration_extrema()
+        
+        info.append('  longest  drifter {0:8s}: {1:5.2f} days \n'.format(
+                    str(maxPa.ID), maxPa.duration()))
+        info.append('  shortest drifter {0:8s}: {1:5.2f} days \n'.format(
+                    str(minPa.ID), minPa.duration()))
+        
+        return ''.join(info)
 
 
 """
@@ -424,5 +730,5 @@ Helper (private) methods are defined below
 Test codes
 """
 if __name__ == '__main__':
-    print('ok')
+    issubclass(type(TCSet), ParticleSet)
 

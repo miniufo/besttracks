@@ -68,7 +68,7 @@ TCs_CMA.plot_tracks()
 Manipulating a single `TC` is also simple:
 ```python
 # Selecting a single TC
-tc = TCs_cma[10]
+tc = TCs_cma[-1]
 
 # Briefly descibe the TC
 print(tc)
@@ -79,3 +79,4 @@ tc.plot()
 ![tc plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/tc_plot.png)
 
 
+More examples can be found at this [notebook](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/Global_TC_tracks.png)
