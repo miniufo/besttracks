@@ -28,35 +28,35 @@ cond2 = lambda df: choose_records(df, 34)
 
 
 TCs_ibtracs = parse_TCs('d:/Data/Typhoons/IBTrACS/IBTrACS.ALL.v04r00.nc',
-                cond=cond,
+                rec_cond=cond,
                 agency='IBTrACS')
 
 TCs_jma = parse_TCs('d:/Data/Typhoons/JMA/original/bst_all.txt',
-                cond=cond,
+                rec_cond=cond,
                 agency='JMA')
 
 TCs_cma = parse_TCs('d:/Data/Typhoons/CMA/original/*.txt',
-                cond=cond,
+                rec_cond=cond,
                 agency='CMA')
 
 TCs_jtwc1 = parse_TCs('d:/Data/Typhoons/JTWC/original/bwp/bwp*',
-                cond=cond,
+                rec_cond=cond,
                 agency='JTWC')
 
 TCs_jtwc2 = parse_TCs('d:/Data/Typhoons/JTWC/original/bsh/bsh*',
-                cond=cond,
+                rec_cond=cond,
                 agency='JTWC')
 
 TCs_jtwc3 = parse_TCs('d:/Data/Typhoons/JTWC/original/bio/bio*',
-                cond=cond,
+                rec_cond=cond,
                 agency='JTWC')
 
 TCs_nhc1 = parse_TCs('d:/Data/Typhoons/NHC/original/hurdat2-1851-2019-052520.txt',
-                cond=cond,
+                rec_cond=cond,
                 agency='NHC')
 
 TCs_nhc2 = parse_TCs('d:/Data/Typhoons/NHC/original/hurdat2-nepac-1949-2019-042320.txt',
-                cond=cond,
+                rec_cond=cond,
                 agency='NHC')
 
 print(TCs_ibtracs)

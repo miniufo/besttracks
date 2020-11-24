@@ -62,6 +62,14 @@ TCs_CMA.plot_tracks()
 
 ![tracks plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/tracks_cma.png)
 
+One can also bin the tracks into gridded statistics (also known as PDF distribution) as:
+```python
+# binning the tracks into gridded data
+TCs_CMA.binning()
+```
+
+![binning plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/binning_cma.png)
+
 ---
 
 ### 3.2 A single TC manipulation
