@@ -18,7 +18,7 @@ https://www.ncdc.noaa.gov/ibtracs/
 
 
 | RSMC | WNP | NEP | NAT | NIO | SIO | WSP | SAT |
-| :----: | ---:| :--: | -- | --- | ---:| :--: |--- |
+| :----: | :--: | :--: | :--: | :--: | :--: | :--: | :--: |
 | JTWC | X |  |  | X | X | X |  |
 | CMA | X |  |  |  |  |  |  |
 | JMA | X |  |  |  |  |  |  |
