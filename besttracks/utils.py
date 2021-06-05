@@ -694,6 +694,86 @@ def binning_particles(ps, var=None, xlim=None, ylim=None, fontsize=15,
                      figsize, reso, title, add_sides=True)
 
 
+def plot_timeseries(ps, freq='monthly', ax=None, figsize=(12,6), fontsize=16,
+                    linewidth=2, add_legend=True, legend_loc='upper left'):
+    """
+    Plot the track and intensity of the given TC.
+
+    Parameters
+    ----------
+    tc: TC
+        A single TC.
+    ax: Axe
+        Axe for plotting
+    fontsize: int
+        Size of the font (title, label and legend)
+
+    Returns
+    -------
+    ax: Axe
+        minimum and maximum values
+    """
+    import pandas as pd
+    
+    df_ace = [tc.records[['TIME','WND']] for tc in ps]
+    df_ace = pd.concat(df_ace, axis=0).set_index('TIME')
+    
+    df_ace['ACE'] = df_ace['WND'] ** 2
+    
+    df_num = [tc.records.iloc[0] for tc in ps]
+    df_num = pd.concat(df_num, axis=1).T.set_index('TIME')
+    
+    if freq == 'monthly':
+        ace = df_ace.resample('M').sum()
+        num = df_num.resample('M').count()
+        
+    elif freq == 'yearly':
+        ace = df_ace.resample('Y').sum()
+        num = df_num.resample('Y').count()
+        
+    elif freq == 'annual':
+        ace = df_ace.groupby(df_ace.index.month).sum()
+        num = df_num.groupby(df_num.index.month).count()
+        
+    else:
+        raise Exception('unknown frequency: ' + freq +
+                        ', should be one of [monthly, yearly, annual]')
+    
+    # print(ace)
+    # print(num)
+    
+    import matplotlib.pyplot as plt
+    
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    
+    a1 = num['LAT'].plot.line(ax=ax, color='r', marker='o')
+    ax.set_title('ACE and No. of TCs', fontsize=fontsize)
+    ax.set_ylim(bottom=0)
+    ax.set_xlabel('Time', fontsize=fontsize-1)
+    ax.set_ylabel("Number of TCs", color="red", fontsize=fontsize-1)
+    plt.setp(ax.get_xticklabels(), fontsize=fontsize-3)
+    plt.setp(ax.get_yticklabels(), fontsize=fontsize-3)
+    
+    ax2=ax.twinx()
+    a2 = (ace['ACE']/1e5).plot.line(ax=ax2, color='b', marker='x')
+    ax2.set_ylim(bottom=0)
+    ax2.set_xlabel('Time', fontsize=fontsize-1)
+    ax2.set_ylabel('ACE', color='b', fontsize=fontsize-1)
+    plt.setp(ax2.get_xticklabels(), fontsize=fontsize-3)
+    plt.setp(ax2.get_yticklabels(), fontsize=fontsize-3)
+    
+    if add_legend:
+        lns = [a1.get_lines()[0], a2.get_lines()[0]]
+        
+        plt.legend(lns, ['No. of TCs', 'ACE of TCs'], fontsize=fontsize-3,
+                   loc=legend_loc)
+    
+    return ax
+
+
+
+
 """
 Helper (private) methods are defined below
 """

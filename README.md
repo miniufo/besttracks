@@ -86,5 +86,15 @@ tc.plot()
 ```
 ![tc plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/tc_plot.png)
 
+---
+
+### 3.3 Timeseries statistics
+`TCSet` also supports statistical analysis over time space. One can plot the timeseries of TC number and accumulated cyclonic energy (ACE) of a `TCSet` as:
+```python
+# plot the climatological timeseries of No. and ACE
+TCs_CMA.plot_timeseries(freq='annual')
+```
+![tc plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/timeseries.png)
+
 
 More examples can be found at this [notebook](https://github.com/miniufo/besttracks/blob/master/notebooks/QuickGuide.ipynb)

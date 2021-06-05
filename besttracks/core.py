@@ -6,6 +6,7 @@ Created on 2020.08.01
 Copyright 2018. All rights reserved. Use is subject to license terms.
 """
 import numpy as np
+import pandas as pd
 
 undef = -9999.0
 
@@ -564,6 +565,18 @@ class TCSet(ParticleSet):
             #         tc.wndunit = 'knot'
         
         return self
+    
+    def plot_timeseries(self, freq='monthly', **kwargs):
+        """
+        Plot the timeseries of statistics.
+        
+        Parameters
+        ----------
+        freq: str
+            Frequency of statistics, should be ['monthly', 'yearly', 'annual'].
+        """
+        from .utils import plot_timeseries
+        return plot_timeseries(self, freq=freq, **kwargs)
     
     
     def __repr__(self):
