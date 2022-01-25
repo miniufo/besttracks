@@ -58,6 +58,8 @@ class Particle(object):
             5. Choose records inside a region:
                cond = lambda df: (df['LON'] > 90 & df['LON'] < 180 &
                                   df['LAT'] >  0 & df['LAT'] < 50)
+            6. Choose records by slicing:
+               cond = slice(2, 10)
         
         Returns
         ----------
@@ -71,6 +73,56 @@ class Particle(object):
         return re
     
     
+    def translate_velocity(self):
+        """
+        Calculate translate velocity of this TC.
+        
+        Returns
+        ----------
+        re: pandas.DataFrame
+            A new particle containing the records satisfying the conditions
+        """
+        from numpy import cos as cos
+        from numpy import deg2rad as deg2rad
+        from GeoApps.ConstUtils import Rearth
+        
+        lons = self.records.LON
+        lats = self.records.LAT
+        time = self.records.TIME
+        
+        dlon = finite_difference(lons)
+        dlat = finite_difference(lats)
+        dtim = finite_difference(time)[0].seconds
+        
+        uo = Rearth * deg2rad(dlon * cos(deg2rad(lats))) / dtim
+        vo = Rearth * deg2rad(dlat) / dtim
+        
+        self.records['UO'] = uo
+        self.records['VO'] = vo
+        
+        return self
+    
+    
+    def get_as_xarray(self, field):
+        """
+        Return a field of records as a xarray of time series.
+        
+        Parameters
+        ----------
+        field: str
+            A field string of the records.
+        
+        Returns
+        ----------
+        re: xarray.DataArray
+            A time series of the given field in xarray
+        """
+        import xarray as xr
+        
+        return xr.DataArray(self.records[field.upper()], dims='time',
+                            coords={'time':self.records['TIME']})
+    
+    
     def duration(self):
         """
         Get duration (days) of this particle.
@@ -82,6 +134,30 @@ class Particle(object):
         """
         duration = np.ptp(self.records['TIME'])
         return duration.astype('timedelta64[h]').astype(int) / 24.0
+    
+    
+    def resample(self, *args, **kwargs):
+        """
+        Re-sample a particle along time dimension.
+        
+        Parameters
+        ----------
+        args: list
+            All the positional arguments passing to `DataFrame.resample()`.
+        kwargs: list
+            All the keyword arguments passing to `DataFrame.resample()`.
+
+        Returns
+        ----------
+        re: particle
+            Resampled particle
+        """
+        re = self.copy(copy_records=False)
+        re.records = self.records.set_index('TIME').resample(*args, **kwargs)\
+                         .interpolate().fillna(value=None,
+                                               method='ffill').reset_index()
+        
+        return re
     
     
     def plot_track(self, **kwargs):
@@ -737,7 +813,34 @@ class DrifterSet(ParticleSet):
 """
 Helper (private) methods are defined below
 """
-
+def finite_difference(array):
+    """
+    Central finite difference of a given data series.
+    Forword or backword differences are used at the end points.
+    
+    Returns
+    ----------
+    re: dataframe or numpy.array
+        Difference of original array.
+    """
+    if type(array) in [pd.core.series.Series, pd.core.frame.DataFrame]:
+        dataL = array.shift( 1, fill_value=array.iloc[ 0])
+        dataR = array.shift(-1, fill_value=array.iloc[-1])
+    elif type(array) in [np.ndarray, np.array]:
+        dataL = array.shift( 1, fill_value=array.iloc[ 0])
+        dataR = array.shift(-1, fill_value=array.iloc[-1])
+    else:
+        raise Exception('invalid type of input: ' + type(array))
+    
+    # interior is central finite difference
+    de = np.ones(len(array))
+    de[1:-1] = 2
+    
+    re = (dataR - dataL) / de
+    
+    return re
+    
+    
 
 """
 Test codes
