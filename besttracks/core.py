@@ -73,9 +73,14 @@ class Particle(object):
         return re
     
     
-    def translate_velocity(self):
+    def translate_velocity(self, Rearth=6371200):
         """
         Calculate translate velocity of this TC.
+
+        Parameters
+        ----------
+        Rearth: float
+            Mean earth radius (meter)
         
         Returns
         ----------
@@ -84,6 +89,7 @@ class Particle(object):
         """
         from numpy import cos as cos
         from numpy import deg2rad as deg2rad
+
         from GeoApps.ConstUtils import Rearth
         
         lons = self.records.LON
