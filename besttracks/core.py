@@ -89,8 +89,6 @@ class Particle(object):
         """
         from numpy import cos as cos
         from numpy import deg2rad as deg2rad
-
-        from GeoApps.ConstUtils import Rearth
         
         lons = self.records.LON
         lats = self.records.LAT
