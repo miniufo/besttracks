@@ -41,11 +41,72 @@ Up to now, the datasets from the above agencies are supported.  It would be good
 ```
 git clone https://github.com/miniufo/besttracks.git
 ```
-
 ---
 
-## 3. Examples
-### 3.1 Best-track datasets manipulations
+## 3. Data Structures
+The core data structures of `besttracks` are **`TCSet`** and **`TC`**:
+
+### 3.1 `TCSet` (Tropical Cyclone List)
+A container for a list of tropical cyclones (`TC`). Each `TCSet` object represents a collection of tropical cyclones parsed from a specific dataset.
+
+#### Structure:
+```plaintext
+TCSet
+└── TC Object (Example)
+    ├── ID: 1979002S04179 (str)
+    ├── ace() (Method)
+    │   └── Signature: ()
+    ├── binning() (Method)
+    │   └── Signature: (var=None, **kwargs)
+    ├── change_wind_unit() (Method)
+    │   └── Signature: (unit=None)
+    ├── copy() (Method)
+    │   └── Signature: (copy_records=True)
+    ├── duration() (Method)
+    │   └── Signature: ()
+    ├── fcstTime: 0 (int)
+    ├── get_as_xarray() (Method)
+    │   └── Signature: (field)
+    ├── name: GORDON (str)
+    ├── peak_intensity() (Method)
+    │   └── Signature: ()
+    ├── plot() (Method)
+    │   └── Signature: (**kwargs)
+    ├── plot_intensity() (Method)
+    │   └── Signature: (unit='knot', **kwargs)
+    ├── plot_track() (Method)
+    │   └── Signature: (**kwargs)
+    ├── records (DataFrame)
+    │   └── Shape: (101, 6), Columns: ['TIME', 'TYPE', 'LAT', 'LON', 'WND', 'PRS']
+    ├── resample() (Method)
+    │   └── Signature: (*args, **kwargs)
+    ├── sel() (Method)
+    │   └── Signature: (cond, copy=True)
+    ├── translate_velocity() (Method)
+    │   └── Signature: (Rearth=6371200)
+    ├── wndunit: knot (str)
+    └── year: 1979 (int)
+```
+### 3.2 TC (Single Tropical Cyclone)
+A single tropical cyclone object that contains detailed information about the cyclone's track, intensity, and metadata.
+
+#### Key attributes and methods:
+
+- **ID**: Unique identifier for the tropical cyclone.
+- **name**: Name of the tropical cyclone.
+- **records**: A `pandas.DataFrame` containing the time-series data of the cyclone's track and intensity.
+  - Columns: `['TIME', 'TYPE', 'LAT', 'LON', 'WND', 'PRS']`
+- **Methods**:
+  - `plot()`: Plot the track and intensity of the cyclone.
+  - `binning()`: Bin the track data into gridded statistics.
+  - `ace()`: Calculate the Accumulated Cyclone Energy (ACE).
+  - `duration()`: Get the total duration of the cyclone.
+  - `peak_intensity()`: Find the peak intensity of the cyclone.
+  - `change_wind_unit(unit)`: Convert wind speed units between knots, meters per second, and kilometers per hour.
+---
+
+## 4. Examples
+### 4.1 Best-track datasets manipulations
 Parsing best-track dataset **CMA** into `TCSet` would be as simple as:
 ```python
 from besttracks import parse_TCs
@@ -72,7 +133,7 @@ TCs_CMA.binning()
 
 ---
 
-### 3.2 A single TC manipulation
+### 4.2 A single TC manipulation
 Manipulating a single `TC` is also simple:
 ```python
 # Selecting a single TC
@@ -88,7 +149,7 @@ tc.plot()
 
 ---
 
-### 3.3 Timeseries statistics
+### 4.3 Timeseries statistics
 `TCSet` also supports statistical analysis over time space. One can plot the timeseries of TC number and accumulated cyclonic energy (ACE) of a `TCSet` as:
 ```python
 # plot the climatological timeseries of No. and ACE
