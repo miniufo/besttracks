@@ -5,6 +5,7 @@ Created on 2020.08.01
 @author: MiniUFO
 Copyright 2018. All rights reserved. Use is subject to license terms.
 """
+from typing import Union, Optional, Callable, List, Sequence, Any, Dict, Tuple
 import pandas as pd
 import xarray as xr
 import numpy as np
@@ -37,8 +38,15 @@ data (BABJ format).
 
 IO realted methods are defined below.
 """
-def parse_TCs(filename, rec_cond=None, tc_cond=None,
-              agency='CMA', wndunit='knot'):
+
+
+def parse_TCs(
+    filename: Union[str, Sequence[str]],
+    rec_cond: Optional[Callable[[pd.DataFrame], pd.Series]] = None,
+    tc_cond: Optional[Callable[[TC], bool]] = None,
+    agency: str = 'CMA',
+    wndunit: str = 'knot'
+) -> TCSet:
     """
     Parse TC Best-Track data from various agents.
 
@@ -64,121 +72,99 @@ def parse_TCs(filename, rec_cond=None, tc_cond=None,
     list of TC (data struct of a namedtuple)
     """
     agency = agency.upper()
-    
+
+    # Validate wind unit
     if wndunit not in ['knot', 'm/s']:
-        raise Exception('invalid wind unit {0:s}, should be "knot" or "m/s"'
-                        .format(wndunit))
-    
-    if agency == 'CMA': ############## CMA ###############
-        data = parseCMA(filename)
-        # change wind unit to knot
-        if wndunit == 'knot':
-            data['WND'].where(data['WND']==undef,
-                              data['WND']/0.51444,
-                              inplace=True)
-        
-    elif agency == 'JMA': ############ JMA ###############
-        data = parseJMA(filename)
-        # change wind unit to m/s
-        if wndunit == 'm/s':
-            data['WND'].where(data['WND']==undef,
-                              data['WND']*0.51444,
-                              inplace=True)
-            
-    elif agency == 'JTWC': ########### JTWC ##############
-        data = parseJTWC(filename)
-        # change wind unit to m/s
-        if wndunit == 'm/s':
-            data['WND'].where(data['WND']==undef,
-                              data['WND']*0.51444,
-                              inplace=True)
-            
-    elif agency == 'NHC': ############ NHC ###############
-        data = parseNHC(filename)
-        # change wind unit to m/s
-        if wndunit == 'm/s':
-            data['WND'].where(data['WND']==undef,
-                              data['WND']*0.51444,
-                              inplace=True)
-            
-    elif agency == 'IBTRACS': ######### IBTrACS ##########
-        data = parseIBTrACS(filename)
-        # change wind unit to m/s
-        if wndunit == 'm/s':
-            data['WND'].where(data['WND']==undef,
-                              data['WND']*0.51444,
-                              inplace=True)
-        
-    elif agency == 'BABJ': ############ BABJ #############
-        data = parseBABJ(filename)
-        # change wind unit to knot
-        if wndunit == 'knot':
-            data['WND'].where(data['WND']==undef,
-                              data['WND']/0.51444,
-                              inplace=True)
-        
-    else:
-        raise Exception('not supported agent ' + agency + ', should be one of ' +
-                        "['JTWC', 'JMA', 'CMA', 'NHC', 'IBTrACS', 'BABJ']")
-    
+        raise ValueError(
+            f'Invalid wind unit {wndunit}, should be "knot" or "m/s"')
+
+    # Define parser mapping
+    parser_mapping = {
+        'CMA': parseCMA,
+        'JMA': parseJMA,
+        'JTWC': parseJTWC,
+        'NHC': parseNHC,
+        'IBTRACS': parseIBTrACS,
+        'BABJ': parseBABJ
+    }
+
+    # Validate agency
+    if agency not in parser_mapping:
+        raise ValueError(
+            f'Unsupported agency {agency}, should be one of {list(parser_mapping.keys())}')
+
+    # Parse data using appropriate function
+    data = parser_mapping[agency](filename)
+
+    # Handle wind unit conversion
+    conversion_factor = 0.51444  # Conversion factor: knot = m/s / 0.51444
+
+    # Define agency groups by original wind unit
+    knot_agencies = ['JMA', 'JTWC', 'NHC', 'IBTRACS']  # Provide wind in knots
+    ms_agencies = ['CMA', 'BABJ']  # Provide wind in m/s
+
+    # Perform wind unit conversion if needed
+    if agency in ms_agencies and wndunit == 'knot':
+        # Convert from m/s to knot
+        mask = data['WND'] != undef
+        data.loc[mask, 'WND'] = data.loc[mask, 'WND'] / conversion_factor
+    elif agency in knot_agencies and wndunit == 'm/s':
+        # Convert from knot to m/s
+        mask = data['WND'] != undef
+        data.loc[mask, 'WND'] = data.loc[mask, 'WND'] * conversion_factor
+
     # remove duplicated records
     data.drop_duplicates(inplace=True)
-    
+
     # change dtypes to save memory
     data = data.astype({'LAT': np.float32, 'LON': np.float32,
                         'WND': np.float32, 'PRS': np.float32}, copy=False)
-    
+
     if 'IDtmp' in data:
         # unique for CMA, JTWC
         TCdata = data.groupby('IDtmp')
     else:
         # unique for NHC, JMA, IBTrACS
         TCdata = data.groupby('ID')
-    
-    TCs = []
-    
+
+    TCs: List[TC] = []
+
     for groupID, DATA in TCdata:
         DATA.reset_index(drop=True, inplace=True)
-        
+
         # data cleaning using condition
         if rec_cond is not None:
             DATA = DATA.loc[rec_cond]
             DATA.reset_index(drop=True, inplace=True)
-            
+
             if len(DATA) == 0:
                 continue
-        
-        year = DATA.iloc[0]['TIME'].year
-        name = DATA['NAME'].iloc[0]
-        ID   = DATA['ID'].iloc[0]
-        
-        if agency == 'BABJ': # operational
+
+        year: int = DATA.iloc[0]['TIME'].year
+        name: str = DATA['NAME'].iloc[0]
+        ID: str = DATA['ID'].iloc[0]
+
+        if agency == 'BABJ':  # operational
             for time, fcstdata in DATA.groupby('TIME'):
                 tc = TC(ID, name, year, wndunit, time,
                         fcstdata.drop(columns=['ID', 'NAME'])
-                             .reset_index(drop=True))
-                
-                if tc_cond != None:
-                    if tc_cond(tc):
-                        TCs.append(tc)
-                else:
+                        .reset_index(drop=True))
+
+                if tc_cond is None or tc_cond(tc):
                     TCs.append(tc)
-                
-        else: # Best Track
-            drops = ['ID', 'NAME']
-            
+
+        else:  # Best Track
+            drops: List[str] = ['ID', 'NAME']
+
             if 'IDtmp' in DATA:
                 drops.append('IDtmp')
-                
+
             tc = TC(ID, name, year, wndunit, 0,
                     DATA.drop(columns=drops).reset_index(drop=True))
-            
-            if tc_cond != None:
-                if tc_cond(tc):
-                    TCs.append(tc)
-            else:
+
+            if tc_cond is None or tc_cond(tc):
                 TCs.append(tc)
-    
+
     return TCSet(TCs, agency=agency)
 
 
@@ -186,9 +172,9 @@ def parse_GDPDrifters(filenames, full=False, chunksize=None, rawframe=False,
                       rec_cond=None, dr_cond=None):
     """
     Parse the drifter data file (ASCII) from NOAA into a pandas.DataFrame.
-    
+
     Reference: https://www.aoml.noaa.gov/phod/gdp/buoydata_header.php
-    
+
     Parameters
     ----------
     filename: str
@@ -212,20 +198,20 @@ def parse_GDPDrifters(filenames, full=False, chunksize=None, rawframe=False,
         Raw data in a pandas.DataFrame.
     """
     if full:
-        cols = [( 0, 8), (10, 25), (28, 35), (38,  45), ( 47,  56), (57, 65),
-                (67,75), (76, 85), (86, 98), (99, 111), (112, 124)]
+        cols = [(0, 8), (10, 25), (28, 35), (38,  45), (47,  56), (57, 65),
+                (67, 75), (76, 85), (86, 98), (99, 111), (112, 124)]
         colN = ['ID', 'TIME', 'LAT', 'LON', 'SST', 'U', 'V', 'SPD',
                 'VarLat', 'VarLon', 'VarT']
         dtyp = {'LAT': np.float32, 'LON': np.float32, 'Varlat': np.float32,
-                'SST': np.float32, 'U'  : np.float32, 'Varlon': np.float32,
-                'V'  : np.float32, 'SPD': np.float32, 'VarT'  : np.float32}
+                'SST': np.float32, 'U': np.float32, 'Varlon': np.float32,
+                'V': np.float32, 'SPD': np.float32, 'VarT': np.float32}
     else:
-        cols = [( 0,  8), (10, 25), (28, 35), (38, 45), (47, 56),
+        cols = [(0,  8), (10, 25), (28, 35), (38, 45), (47, 56),
                 (57, 65), (67, 75), (76, 85)]
         colN = ['ID', 'TIME', 'LAT', 'LON', 'SST', 'U', 'V', 'SPD']
         dtyp = {'LAT': np.float32, 'LON': np.float32, 'SST': np.float32,
-                'U'  : np.float32, 'V'  : np.float32, 'SPD': np.float32}
-    
+                'U': np.float32, 'V': np.float32, 'SPD': np.float32}
+
     if chunksize == None:
         iters = [pd.read_fwf(f, header=None, colspecs=cols, names=colN,
                              parse_dates=['TIME'], dtype=dtyp,
@@ -237,40 +223,40 @@ def parse_GDPDrifters(filenames, full=False, chunksize=None, rawframe=False,
                              chunksize=chunksize, dtype=dtyp,
                              date_parser=__parse_datetime)
                  for f in glob(filenames)]
-        
+
     data = pd.concat([chunk[rec_cond] for chunks in iters for chunk in chunks])
-    
+
     if rawframe:
         return data
-    
+
     data = data.astype(dtyp, copy=False)
-    
+
     groups = data.groupby('ID')
-    
+
     drifters = []
-    
+
     for ID, records in groups:
-        if len(records) <  2:
+        if len(records) < 2:
             raise Exception('only one record is found')
         elif len(records) == 2:
             if records['TIME'].diff().reset_index()['TIME'].loc[1] != \
-                pd.Timedelta(value=6, unit='H'):
-                    raise Exception('not 6hr interval\n' + str(records))
+                    pd.Timedelta(value=6, unit='H'):
+                raise Exception('not 6hr interval\n' + str(records))
         else:
             freq = pd.infer_freq(records['TIME'])
-        
+
         if freq != '6H':
             raise Exception('drifter (ID: {0:8d}) is not 6hr interval'
                             .format(freq))
-        
+
         records.drop(columns='ID', inplace=True)
         # records = records.reset_index()
-        
+
         dr = Drifter(str(ID), records)
-        
+
         if dr_cond(dr):
             drifters.append(dr)
-        
+
     return DrifterSet(drifters)
 
 
@@ -300,55 +286,55 @@ def parseNHC(filename, encoding='utf-8'):
         Raw data in a pandas.DataFrame.
     """
     re = []
-    
+
     with open(filename, 'r', encoding=encoding) as f:
         fileContent = f.readlines()
-        
+
         for i, line in enumerate(fileContent):
             if len(line) < 50:
                 tokens = line.split(',')
 
                 count = tokens[2].strip()
-                ID    = tokens[0].strip() # unique in NHC
-                NAME  = tokens[1].strip()
+                ID = tokens[0].strip()  # unique in NHC
+                NAME = tokens[1].strip()
 
                 ID = ID[4:8] + ID[2:4]
-                
+
                 if NAME == 'UNNAMED':
                     NAME = 'NONAME'
-                
+
                 count = int(count)
-                
+
                 strIdx = i + 1
-                
+
                 for ln in fileContent[strIdx:strIdx+count]:
                     TIME = datetime.strptime(ln[:8] + ln[10:12], "%Y%m%d%H")
                     TYPE = __get_type_NHC(ln[19:21])
-                    LAT  = float(ln[22:27].strip())
-                    LON  = float(ln[30:35].strip())
-                    PRS  = float(ln[43:47].strip())
-                    WND  = float(ln[38:41].strip())
+                    LAT = float(ln[22:27].strip())
+                    LON = float(ln[30:35].strip())
+                    PRS = float(ln[43:47].strip())
+                    WND = float(ln[38:41].strip())
 
                     if ln[35:36] == 'W':
                         LON = 360 - LON
-                    
+
                     if PRS == -999:
                         PRS = undef
 
                     if WND == -99 or WND == -999:
                         WND = undef
-                    
+
                     re.append((ID, NAME, TIME, LAT, LON, TYPE, PRS, WND))
-    
-    return pd.DataFrame.from_records(re, columns=['ID','NAME','TIME','LAT',
-                                                  'LON','TYPE','PRS','WND'])
+
+    return pd.DataFrame.from_records(re, columns=['ID', 'NAME', 'TIME', 'LAT',
+                                                  'LON', 'TYPE', 'PRS', 'WND'])
 
 
-def parseIBTrACS(filename, encoding='utf-8'):
+def parseIBTrACS(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFrame:
     """
     Parse the Best-Track data from International Best Track Archive for Climate
     Stewardship (IBTrACS) into a pandas.DataFrame.
-    
+
     Notice that only WMO-sanctioned variables are loaded.  Data from different
     agencies are ignored as they can be accessed from other databases.
 
@@ -360,32 +346,30 @@ def parseIBTrACS(filename, encoding='utf-8'):
         The file name of the IBTrACS Best-Track data.
     encoding: str
         Encoding of the file.
-    
+
     Returns
     -------
     re: pandas.DataFrame
         Results in a pandas.DataFrame.
     """
-    keeps = ['sid', 'name', 'iso_time',
-             # 'numobs', 'basin', 'season',
-             'nature', 'lat', 'lon', 'wmo_wind', 'wmo_pres']
-    
+    keeps: List[str] = ['sid', 'name', 'iso_time',
+                        # 'numobs', 'basin', 'season',
+                        'nature', 'lat', 'lon', 'wmo_wind', 'wmo_pres']
+
     KEEPS = [s.upper() for s in keeps]
-    
+
     if filename.endswith('.nc'):
-        import numpy as np
-        
         ds = xr.open_dataset(filename)
-        
+
         drops = [v for v in ds.variables]
-        
+
         for keep in keeps:
             drops.remove(keep)
-        
+
         ds = ds.drop_vars(drops)
-        
+
         df = ds.to_dataframe().loc[lambda df: df['iso_time'] != b'']
-        
+
         # rename columns
         renameDict = {'sid': 'ID',
                       # 'season': 'YEAR',
@@ -396,15 +380,16 @@ def parseIBTrACS(filename, encoding='utf-8'):
                       'lon': 'LON',
                       'wmo_wind': 'WND',
                       'wmo_pres': 'PRS'}
-        
+
         df.reset_index(drop=True, inplace=True)
-        
-        df.loc[:, 'iso_time'] = pd.to_datetime(df['iso_time'].str.decode('utf-8'))
-        df.loc[:, 'sid'] = df['sid'].str.decode('utf-8')
-        df.loc[:, 'name'] = df['name'].str.decode('utf-8')
-        df.loc[:, 'nature'] = df['nature'].str.decode('utf-8')
+
+        df.loc[:, 'iso_time'] = pd.to_datetime(
+            df['iso_time'].str.decode(encoding))
+        df.loc[:, 'sid'] = df['sid'].str.decode(encoding)
+        df.loc[:, 'name'] = df['name'].str.decode(encoding)
+        df.loc[:, 'nature'] = df['nature'].str.decode(encoding)
         df.replace(np.nan, undef, inplace=True)
-        
+
     elif filename.endswith('csv'):
         # rename columns
         renameDict = {'SID': 'ID',
@@ -413,17 +398,18 @@ def parseIBTrACS(filename, encoding='utf-8'):
                       'NATURE': 'TYPE',
                       'WMO_WIND': 'WND',
                       'WMO_PRES': 'PRS'}
-        
+
         df = pd.read_csv(filename, usecols=KEEPS, skiprows=[1],
                          parse_dates=['ISO_TIME']).loc[lambda df: df['ISO_TIME'] != '']
-        
+
         df.replace(r'^\s+$', undef, regex=True, inplace=True)
-        
+
     else:
-        raise Exception('unsupported file type ' + filename)
-    
+        raise ValueError(
+            f"Unsupported file type: {filename}. Expected .nc or .csv")
+    # Rename columns to standard format
     df.rename(columns=renameDict, inplace=True)
-    
+
     return df
 
 
@@ -462,34 +448,34 @@ def parseCMA(filenames, encoding='utf-8'):
 
     if not paths:
         raise OSError("no files to open")
-    
+
     re = []
-    
+
     for p in paths:
         fileContent = __concat_files(p, encoding=encoding)
-        
+
         year = os.path.splitext(os.path.basename(p))[0][2:6]
-        
+
         for i, line in enumerate(fileContent):
             if line.startswith('66666'):
                 parts = line.split()
-                
-                count  = parts[2].strip()
-                IDtmp  = parts[3].strip() # this is unique in each year
-                ID     = parts[4].strip() # official ID
-                NAME   = parts[7].strip()
-                count  = int(count)
+
+                count = parts[2].strip()
+                IDtmp = parts[3].strip()  # this is unique in each year
+                ID = parts[4].strip()  # official ID
+                NAME = parts[7].strip()
+                count = int(count)
                 strIdx = i + 1
-                
+
                 # skip sub-center records.  The sub-center refers to a center
                 # that was split or induced from the original tropical cyclone
                 # circulation center.
                 if NAME.find('(-)') != -1:
                     continue
-                
+
                 if NAME == '' or NAME == '(nameless)':
                     NAME = 'NONAME'
-                    
+
                 # Parts of the records do not have official IDs (ID == '0000')
                 # We modify them to contain at least information of year
                 if ID == '0000':
@@ -497,23 +483,24 @@ def parseCMA(filenames, encoding='utf-8'):
                 else:
                     # add century to ID
                     ID = str(year)[:2] + ID
-                    
+
                 IDtmp = str(year) + IDtmp[2:]
-                
+
                 for ln in fileContent[strIdx:strIdx+count]:
                     tokens = ln.split()
-                    
+
                     TIME = datetime.strptime(tokens[0], "%Y%m%d%H")
                     TYPE = __get_type_CMA(tokens[1])
-                    LAT  = float(tokens[2]) / 10.0
-                    LON  = float(tokens[3]) / 10.0
-                    PRS  = float(tokens[4])
-                    WND  = float(tokens[5]) # m/s
-                    
-                    re.append((IDtmp, ID, NAME, TIME, LAT, LON, TYPE, PRS, WND))
-            
+                    LAT = float(tokens[2]) / 10.0
+                    LON = float(tokens[3]) / 10.0
+                    PRS = float(tokens[4])
+                    WND = float(tokens[5])  # m/s
+
+                    re.append((IDtmp, ID, NAME, TIME,
+                              LAT, LON, TYPE, PRS, WND))
+
     return pd.DataFrame.from_records(re, columns=['IDtmp', 'ID', 'NAME',
-                                                  'TIME', 'LAT', 'LON','TYPE',
+                                                  'TIME', 'LAT', 'LON', 'TYPE',
                                                   'PRS', 'WND'])
 
 
@@ -545,77 +532,77 @@ def parseJMA(filename, encoding='utf-8'):
         Raw data in a pandas.DataFrame.
     """
     re = []
-    
+
     with open(filename, 'r', encoding=encoding) as f:
         fileContent = f.readlines()
-        
+
         for i, line in enumerate(fileContent):
             if line.startswith('66666'):
-                count  = line[12:15].strip()
-                ID     = line[21:25].strip() # unique
-                IDtmp  = line[ 6:10].strip()
-                NAME   = line[30:50].strip()
-                count  = int(count)
+                count = line[12:15].strip()
+                ID = line[21:25].strip()  # unique
+                IDtmp = line[6:10].strip()
+                NAME = line[30:50].strip()
+                count = int(count)
                 strIdx = i + 1
-                
+
                 if ID != IDtmp:
                     raise Exception(ID, IDtmp)
-                
+
                 tokens = fileContent[strIdx].split()
-                year   = datetime.strptime(tokens[0],
-                                           "%y%m%d%H").year
-                
+                year = datetime.strptime(tokens[0],
+                                         "%y%m%d%H").year
+
                 # don't let year = 2069 happen
                 if 51 <= int(tokens[0][:2]) <= 68:
                     year -= 100
-                
+
                 # add century to ID
                 ID = str(year)[:2] + ID
-                
+
                 if NAME == '':
                     NAME = 'NONAME'
-                
+
                 for ln in fileContent[strIdx:strIdx+count]:
                     tokens = ln.split()
-                    
+
                     TIME = datetime.strptime(tokens[0], "%y%m%d%H")
                     TYPE = __get_type_JMA(tokens[2])
-                    LAT  = float(tokens[3]) / 10.0
-                    LON  = float(tokens[4]) / 10.0
-                    PRS  = float(tokens[5])
-                    
+                    LAT = float(tokens[3]) / 10.0
+                    LON = float(tokens[4]) / 10.0
+                    PRS = float(tokens[5])
+
                     # don't let year = 2069 happen
                     if 51 <= int(tokens[0][:2]) <= 68:
                         TIME = TIME.replace(year=TIME.year-100)
-                    
+
                     if len(tokens) <= 6:
                         WND = undef
                     else:
                         WND = float(tokens[6])
-                    
+
                     re.append((ID, NAME, TIME, LAT, LON, TYPE, PRS, WND))
-    
-    return pd.DataFrame.from_records(re, columns=['ID','NAME','TIME','LAT',
-                                                  'LON','TYPE','PRS','WND'])
+
+    return pd.DataFrame.from_records(re, columns=['ID', 'NAME', 'TIME', 'LAT',
+                                                  'LON', 'TYPE', 'PRS', 'WND'])
 
 
 def parseJTWC(filenames, encoding='utf-8'):
     """
     Parse the Best-Track data from Joint Typhoon Warning Center (JTWC)
     into a pandas.DataFrame.
-    
+
     Note that there is no official ID and name for each TC.  So the ID is
     a simple composite of year + number of TC, while the name is the
     composite of basin (e.g., WP) + ID.  Also there are some duplicated data.
-    
+
     The maximum surface wind speed is defined as *1-min* averaged 10m wind
     speed in unit of *knot*.
-    
+
     Possible errors in the original txt files:
     - bwp231969.txt, time 1969100000 should be 1969100100?
-    
+
     Reference: https://www.metoc.navy.mil/jtwc/jtwc.html?best-tracks
-    
+
     Parameters
     ----------
     filenames : str
@@ -635,49 +622,49 @@ def parseJTWC(filenames, encoding='utf-8'):
 
     if not paths:
         raise OSError("no files to open")
-    
+
     re = []
-    
+
     for p in paths:
         fileContent = __concat_files(p, encoding=encoding)
-        
+
         IDtmp = os.path.splitext(os.path.basename(p))[0]
-        
+
         if fileContent != []:
             pre = fileContent[0][10:12]
-            ID  = pre + fileContent[0][4:6]
-            
+            ID = pre + fileContent[0][4:6]
+
             if int(pre) >= 45:
                 ID = '19' + ID
             else:
                 ID = '20' + ID
-            
+
             for ln in fileContent:
                 # basin= ln[:2]
                 TIME = datetime.strptime(ln[8:18], "%Y%m%d%H")
-                LAT  = float(ln[35:38]) / 10.0
-                LON  = float(ln[41:45]) / 10.0
-                WND  = float(ln[47:51])
-                
+                LAT = float(ln[35:38]) / 10.0
+                LON = float(ln[41:45]) / 10.0
+                WND = float(ln[47:51])
+
                 if ln[38:39] == 'S':
                     LAT = -LAT
-                
+
                 if ln[45:46] == 'W':
                     LON = 360.0 - LON
-                
+
                 tmp = ln[52:57].strip()
                 if tmp == '':
                     PRS = undef
                 else:
                     PRS = float(tmp)
-                
+
                 if WND == -999:
                     WND = undef
-                
+
                 re.append((IDtmp, ID, 'NONAME', TIME, LAT, LON, PRS, WND))
         else:
             print('empty file is found: ' + p)
-    
+
     return pd.DataFrame.from_records(re, columns=['IDtmp', 'ID', 'NAME',
                                                   'TIME', 'LAT', 'LON',
                                                   'PRS', 'WND'])
@@ -704,51 +691,52 @@ def parseBABJ(filenames, encoding='GBK'):
         Raw data in a pandas.DataFrame.
     """
     paths = sorted(glob(filenames))
-    
+
     re = []
-    
+
     for path in paths:
         with open(path, 'r', encoding=encoding) as f:
             fileContent = f.readlines()
-            
+
             tokens = fileContent[1].split()
-            
+
             NAME = tokens[0]
-            ID   = tokens[1]
-            count= tokens[3]
-            
+            ID = tokens[1]
+            count = tokens[3]
+
             count = int(count)
-            
+
             strIdx = 3
-            
+
             for ln in fileContent[strIdx:strIdx+count]:
                 tokens = ln.split()
-                
+
                 timestr = tokens[0] + tokens[1] + tokens[2] + tokens[3]
-                
+
                 # change BJ time to UTC
                 TIME = datetime.strptime(timestr, "%Y%m%d%H") \
-                     - timedelta(hours=8)
-                FCST =   int(tokens[4])
-                LON  = float(tokens[5])
-                LAT  = float(tokens[6])
-                PRS  = float(tokens[7])
-                WND  = float(tokens[8])
-                
+                    - timedelta(hours=8)
+                FCST = int(tokens[4])
+                LON = float(tokens[5])
+                LAT = float(tokens[6])
+                PRS = float(tokens[7])
+                WND = float(tokens[8])
+
                 if PRS != 9999.0:
                     re.append((ID, NAME, TIME, FCST, LAT, LON, PRS, WND))
                 else:
                     print('remove undef in ' + ID + ':\n' + ln.strip())
-    
+
     return pd.DataFrame.from_records(re, columns=['ID', 'NAME', 'TIME', 'FCST',
                                                   'LAT', 'LON', 'PRS', 'WND'])
-
 
 
 """
 Helper (private) methods are defined below
 """
-def __concat_files(paths, encoding='utf-8'):
+
+
+def __concat_files(paths: Union[str, Sequence[Union[str, Path]]], encoding: str = 'utf-8') -> List[str]:
     """
 
     Parameters
@@ -771,29 +759,24 @@ def __concat_files(paths, encoding='utf-8'):
         paths = [str(p) if isinstance(p, Path) else p for p in paths]
 
     if not paths:
-        raise OSError("no files to open")
+        raise OSError("No files to open")
 
-    re = []
+    result = []
+    for filepath in paths:
+        with open(filepath, 'r', encoding=encoding) as f:
+            lines = [line if line.endswith(
+                '\n') else line + '\n' for line in f]
+            result.extend(lines)
 
-    for p in paths:
-        with open(p, 'r', encoding=encoding) as f:
-            content = f.readlines()
-
-            for line in content:
-                if line.find('\n') != -1:
-                    re.append(line)
-                else:
-                    re.append(line+'\n')
-    
     return re
 
 
-def __get_type_JMA(code):
+def __get_type_JMA(code: str) -> str:
     """
     Get the type (grade) of the JMA TC records.
     Reference:
     https://www.jma.go.jp/jma/jma-eng/jma-center/rsmc-hp-pub-eg/Besttracks/e_format_bst.html
-    
+
     1 - not used
     2 - tropical depression (TD)
     3 - tropical storm (TS)
@@ -814,38 +797,40 @@ def __get_type_JMA(code):
     re : str
         One of the type in ['TD', 'TS', 'STS', 'TY', 'EC', 'OTHERS'].
     """
-    if code in ['1', '7', '8', '9']:
-        return 'OTHERS'
-    elif code == '2':
-        return 'TD'
-    elif code == '3':
-        return 'TS'
-    elif code == '4':
-        return 'STS'
-    elif code == '5':
-        return 'TY'
-    elif code == '6':
-        return 'EC'
-    else:
-        raise Exception('unknown code ' + code)
+    type_mapping = {
+        '1': 'OTHERS',
+        '2': 'TD',
+        '3': 'TS',
+        '4': 'STS',
+        '5': 'TY',
+        '6': 'EC',
+        '7': 'OTHERS',
+        '8': 'OTHERS',
+        '9': 'OTHERS'
+    }
+
+    try:
+        return type_mapping[code]
+    except KeyError:
+        raise ValueError(f'Unknown code: {code}')
 
 
-def __get_type_CMA(code):
+def __get_type_CMA(code: str) -> str:
     """
     Get the intensity category according to "Chinese National Standard for
     Grade of Tropical Cyclones", which was put in practice since 15 June 2006.
-    
+
     Reference:
     http://tcdata.typhoon.org.cn/zjljsjj_sm.html
-    
+
     0 - weaker than TD or unknown
-	1 - tropical depression	  (TD , 10.8-17.1 m/s)
-	2 - tropical storm	      (TS , 17.2-24.4 m/s)
-	3 - severe tropical storm (STS, 24.5-32.6 m/s)
-	4 - typhoon				  (TY , 41.4-32.7 m/s)
-	5 - severe typhoon		  (STY, 41.5-50.9 m/s)
-	6 - super typhoon		  (superTY, >=51.0 m/s)
-	9 - extratropical cyclone (EC)
+    1 - tropical depression	  (TD , 10.8-17.1 m/s)
+    2 - tropical storm	      (TS , 17.2-24.4 m/s)
+    3 - severe tropical storm (STS, 24.5-32.6 m/s)
+    4 - typhoon               (TY , 32.7-41.4 m/s)
+    5 - severe typhoon        (STY, 41.5-50.9 m/s)
+    6 - super typhoon         (superTY, >=51.0 m/s)
+    9 - extratropical cyclone (EC)
 
     Parameters
     ----------
@@ -857,43 +842,40 @@ def __get_type_CMA(code):
     re : str
         One of the type in ['TD', 'TS', 'STS', 'TY', 'STY', 'EC', 'OTHERS'].
     """
-    if   code == '0':
-        return 'OTHERS'
-    elif code == '1':
-        return 'TD'
-    elif code == '2':
-        return 'TS'
-    elif code == '3':
-        return 'STS'
-    elif code == '4':
-        return 'TY'
-    elif code == '5':
-        return 'STY'
-    elif code == '6':
-        return 'STY'
-    elif code == '9':
-        return 'EC'
-    else:
-        raise Exception('unknown code ' + code)
+    type_mapping = {
+        '0': 'OTHERS',
+        '1': 'TD',
+        '2': 'TS',
+        '3': 'STS',
+        '4': 'TY',
+        '5': 'STY',
+        '6': 'STY',
+        '9': 'EC'
+    }
+
+    try:
+        return type_mapping[code]
+    except KeyError:
+        raise ValueError(f'Unknown code: {code}')
 
 
 def __get_type_NHC(code):
     """
     Get the intensity category according to the status of system defined by
     "National Hurricane Center".
-    
+
     Reference:
     https://www.nhc.noaa.gov/data/hurdat/hurdat2-format-nov2019.pdf
-    
+
     0 - Subtropical cyclone of depression intensity;
         Subtropical cyclone of storm intensity;
         A low that is neither a TC, a subtropical cyclone, nor an EC;
         Tropical wave;
         Disturbuance          (OTHERS, unknown intensity)
-	1 - Tropical depression	  (TD,   <34 knots)
-	2 - Tropical storm	      (TS, 34-63 knots)
-	3 - Hurricane             (HU,   >64 knots)
-	4 - Extratropical cyclone (EC, any intensity)
+        1 - Tropical depression	  (TD,   <34 knots)
+        2 - Tropical storm	      (TS, 34-63 knots)
+        3 - Hurricane             (HU,   >64 knots)
+        4 - Extratropical cyclone (EC, any intensity)
 
     Parameters
     ----------
@@ -908,42 +890,55 @@ def __get_type_NHC(code):
     return code
 
 
-def __parse_datetime(text):
+def __parse_datetime(text: str) -> pd.Timestamp:
     """
-    Parse datetime string into np.datetime64.
+    Parse datetime string from GDP drifter data format into pandas Timestamp.
+
+    Handles specific format: "MM DD.ddd YYYY" where ddd represents fractional day:
+    - .000 = 00:00 (0 hours)
+    - .250 = 06:00 (6 hours)
+    - .500 = 12:00 (12 hours)
+    - .750 = 18:00 (18 hours)
 
     Reference: https://www.aoml.noaa.gov/phod/gdp/buoydata_header.php
 
     Parameters
     ----------
     text: str
-        The string text for datetime.
+        String text for datetime in GDP drifter format (e.g., "1 15.000 1979")
 
     Returns
     -------
-    re: pd.Timestamp
-        A object of Timestamp.
+    pd.Timestamp
+        A pandas Timestamp object representing the parsed datetime
+
+    Raises
+    ------
+    ValueError
+        If the hour fraction is invalid (not in [.000, .250, .500, .750])
     """
-    tokens1 = text.split()
-    tokens2 = tokens1[1].split('.')
-    mo = int(tokens1[0])
-    dy = int(tokens2[0])
-    hr = tokens2[1]
-    yr = int(tokens1[2])
-    
-    if   hr == '000':
-        hr = 0
-    elif hr == '250':
-        hr = 6
-    elif hr == '500':
-        hr = 12
-    elif hr == '750':
-        hr = 18
-    else:
-        raise Exception('invalid hour {0:s}, should be [.000, .250, .500, .750]'
-                        .format(hr))
-    
-    return pd.Timestamp(yr, mo, dy, hr)
+    hour_mapping = {
+        '000': 0,
+        '250': 6,
+        '500': 12,
+        '750': 18
+    }
+
+    parts = text.split()
+    month = int(parts[0])
+
+    day_parts = parts[1].split('.')
+    day = int(day_parts[0])
+    hour_code = day_parts[1]
+    year = int(parts[2])
+
+    try:
+        hour = hour_mapping[hour_code]
+    except KeyError:
+        raise ValueError(
+            f'Invalid hour code: {hour_code}, must be one of {list(hour_mapping.keys())}')
+
+    return pd.Timestamp(year=year, month=month, day=day, hour=hour)
 
 
 """
@@ -955,4 +950,3 @@ if __name__ == '__main__':
     re = __concat_files('D:/Data/Typhoons/CMA/original/CH1949BST.txt')
 
     print(re)
-
