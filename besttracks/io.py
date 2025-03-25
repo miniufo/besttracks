@@ -373,6 +373,8 @@ def parseIBTrACS(filename, encoding='utf-8'):
     KEEPS = [s.upper() for s in keeps]
     
     if filename.endswith('.nc'):
+        import numpy as np
+        
         ds = xr.open_dataset(filename)
         
         drops = [v for v in ds.variables]
@@ -382,7 +384,7 @@ def parseIBTrACS(filename, encoding='utf-8'):
         
         ds = ds.drop_vars(drops)
         
-        df = ds.to_dataframe().loc[lambda df:df['iso_time']!=b'']
+        df = ds.to_dataframe().loc[lambda df: df['iso_time'] != b'']
         
         # rename columns
         renameDict = {'sid': 'ID',
@@ -396,10 +398,11 @@ def parseIBTrACS(filename, encoding='utf-8'):
                       'wmo_pres': 'PRS'}
         
         df.reset_index(drop=True, inplace=True)
-        df.loc[:,'iso_time'] = df['iso_time'].str.decode('utf-8').astype(np.datetime64)
-        df.loc[:,'sid'     ] = df['sid'     ].str.decode('utf-8')
-        df.loc[:,'name'    ] = df['name'    ].str.decode('utf-8')
-        df.loc[:,'nature'  ] = df['nature'  ].str.decode('utf-8')
+        
+        df.loc[:, 'iso_time'] = pd.to_datetime(df['iso_time'].str.decode('utf-8'))
+        df.loc[:, 'sid'] = df['sid'].str.decode('utf-8')
+        df.loc[:, 'name'] = df['name'].str.decode('utf-8')
+        df.loc[:, 'nature'] = df['nature'].str.decode('utf-8')
         df.replace(np.nan, undef, inplace=True)
         
     elif filename.endswith('csv'):
@@ -412,7 +415,7 @@ def parseIBTrACS(filename, encoding='utf-8'):
                       'WMO_PRES': 'PRS'}
         
         df = pd.read_csv(filename, usecols=KEEPS, skiprows=[1],
-                parse_dates=['ISO_TIME']).loc[lambda df:df['ISO_TIME']!='']
+                         parse_dates=['ISO_TIME']).loc[lambda df: df['ISO_TIME'] != '']
         
         df.replace(r'^\s+$', undef, regex=True, inplace=True)
         
