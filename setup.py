@@ -41,7 +41,8 @@ setup(
         "numpy",
         "pandas",
         "matplotlib",
-        "cartopy",
+        "cartopy>=0.22.0",
         "xarray",
+        "netcdf4"
     ],
 )
