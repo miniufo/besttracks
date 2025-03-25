@@ -137,7 +137,7 @@ class Particle(object):
             Duration of this particle in unit of day
         """
         duration = np.ptp(self.records['TIME'])
-        return pd.to_timedelta([duration]).astype('timedelta64[h]')[0] / 24.0
+        return pd.to_timedelta([duration])[0].total_seconds() / 3600.0 / 24.0
     
     
     def resample(self, *args, **kwargs):
@@ -321,11 +321,23 @@ class TC(Particle):
         """
         Get accumulated cyclone energy (ACE) of this TC.
         """
-        cond = lambda df: df['TIME'].dt.hour.isin([0, 6, 12, 18])
+        try:
+            if not pd.api.types.is_datetime64_any_dtype(self.records['TIME']):
+                time_col = pd.to_datetime(self.records['TIME'], errors='coerce')
+            else:
+                time_col = self.records['TIME']
+                
+            mask = time_col.dt.hour.isin([0, 6, 12, 18])
+            
+            wnd = self.records.loc[mask, 'WND']
+        except Exception as e:
+            print(f"Warning: Error filtering by TIME: {e}. Using all records.")
+            wnd = self.records['WND']
         
-        wnd = self.records.loc[cond]['WND']
-        
-        wnd = wnd.where(wnd!=undef)
+        try:
+            wnd = wnd.where(wnd != undef)
+        except NameError:
+            wnd = wnd.dropna()
         
         return (wnd*wnd).sum()
         
