@@ -5,7 +5,7 @@ Created on 2020.08.01
 @author: MiniUFO
 Copyright 2018. All rights reserved. Use is subject to license terms.
 """
-from typing import Union, Optional, Callable, List, Sequence, Any, Dict, Tuple
+from typing import Union, Optional, Callable, List, Sequence  # , Any, Dict, Tuple
 import pandas as pd
 import xarray as xr
 import numpy as np
@@ -16,7 +16,6 @@ from pathlib import Path
 from .core import TCSet, TC, Drifter, DrifterSet
 
 undef = -9999.0
-
 
 """
 Best-Track datasets are provided by several Regional Specialized Meteorological
@@ -168,105 +167,149 @@ def parse_TCs(
     return TCSet(TCs, agency=agency)
 
 
-def parse_GDPDrifters(filenames, full=False, chunksize=None, rawframe=False,
-                      rec_cond=None, dr_cond=None):
+def parse_GDPDrifters(
+    filenames: Union[str, Sequence[Union[str, Path]]],
+    full: bool = False,
+    chunksize: Optional[int] = None,
+    rawframe: bool = False,
+    rec_cond: Optional[Callable[[pd.DataFrame], pd.Series]] = None,
+    dr_cond: Optional[Callable[[Drifter], bool]] = None
+) -> Union[pd.DataFrame, DrifterSet]:
     """
-    Parse the drifter data file (ASCII) from NOAA into a pandas.DataFrame.
+    Parse the drifter data file (ASCII) from NOAA Global Drifter Program (GDP).
 
     Reference: https://www.aoml.noaa.gov/phod/gdp/buoydata_header.php
 
     Parameters
     ----------
-    filename: str
-        The file name of the CMA Best-Track data.
-    full: bool
-        Return full variables including uncertainties (default False).
-    chunksize: int
-        Chunk size for reading (default no chunk and read in all).
-    rawframe: bool
-        Return raw pandas.DataFrame or return drifters as a DrifterSet.
-    rec_cond: lambda expression
-        Used by pandas.dataframe.loc[cond].  Example like:
-        `lambda df:df['TIME'].dt.hour.isin([0, 6, 12, 18])`
-    dr_cond: lambda expression
-        Used to filter the drifters.  Example like:
-        `lambda dr: dr[0].LON < 120`
+    filenames: str or sequence of str or Path
+        The file name pattern or list of files containing GDP drifter data.
+    full: bool, default False
+        Return full variables including uncertainty parameters.
+    chunksize: int, optional
+        Chunk size for reading files. If None, all data is read at once.
+    rawframe: bool, default False
+        If True, return raw pandas.DataFrame; if False, return DrifterSet.
+    rec_cond: callable, optional
+        Function to filter records in the DataFrame.
+        Example: lambda df: df['TIME'].dt.hour.isin([0, 6, 12, 18])
+    dr_cond: callable, optional
+        Function to filter drifters.
+        Example: lambda dr: dr.LON < 120
 
     Returns
     -------
-    re: pandas.DataFrame
-        Raw data in a pandas.DataFrame.
+    Union[pd.DataFrame, DrifterSet]
+        If rawframe=True: Raw data as pandas.DataFrame
+        If rawframe=False: Processed data as DrifterSet object
+
+    Raises
+    ------
+    ValueError
+        If no files match the provided pattern or if drifter data has inconsistent timestamps.
     """
+    # Define columns based on the full parameter
     if full:
-        cols = [(0, 8), (10, 25), (28, 35), (38,  45), (47,  56), (57, 65),
+        cols = [(0, 8), (10, 25), (28, 35), (38, 45), (47, 56), (57, 65),
                 (67, 75), (76, 85), (86, 98), (99, 111), (112, 124)]
         colN = ['ID', 'TIME', 'LAT', 'LON', 'SST', 'U', 'V', 'SPD',
                 'VarLat', 'VarLon', 'VarT']
-        dtyp = {'LAT': np.float32, 'LON': np.float32, 'Varlat': np.float32,
-                'SST': np.float32, 'U': np.float32, 'Varlon': np.float32,
+        dtyp = {'LAT': np.float32, 'LON': np.float32, 'VarLat': np.float32,
+                'SST': np.float32, 'U': np.float32, 'VarLon': np.float32,
                 'V': np.float32, 'SPD': np.float32, 'VarT': np.float32}
     else:
-        cols = [(0,  8), (10, 25), (28, 35), (38, 45), (47, 56),
+        cols = [(0, 8), (10, 25), (28, 35), (38, 45), (47, 56),
                 (57, 65), (67, 75), (76, 85)]
         colN = ['ID', 'TIME', 'LAT', 'LON', 'SST', 'U', 'V', 'SPD']
         dtyp = {'LAT': np.float32, 'LON': np.float32, 'SST': np.float32,
                 'U': np.float32, 'V': np.float32, 'SPD': np.float32}
 
-    if chunksize == None:
+    # Handle file paths
+    if isinstance(filenames, str):
+        paths = sorted(glob(filenames))
+    else:
+        paths = [str(p) if isinstance(p, Path) else p for p in filenames]
+
+    if not paths:
+        raise ValueError(f"No files found matching pattern: {filenames}")
+
+    # Read data from files
+    if chunksize is None:
         iters = [pd.read_fwf(f, header=None, colspecs=cols, names=colN,
                              parse_dates=['TIME'], dtype=dtyp,
                              date_parser=__parse_datetime)
-                 for f in glob(filenames)]
+                 for f in paths]
+        chunks = iters  # No need for iteration when not using chunks
     else:
         iters = [pd.read_fwf(f, header=None, colspecs=cols, names=colN,
                              parse_dates=['TIME'], iterator=True,
                              chunksize=chunksize, dtype=dtyp,
                              date_parser=__parse_datetime)
-                 for f in glob(filenames)]
+                 for f in paths]
+        chunks = [chunk for it in iters for chunk in it]  # Flatten chunks
 
-    data = pd.concat([chunk[rec_cond] for chunks in iters for chunk in chunks])
+    # Apply record condition if provided
+    if rec_cond is not None:
+        data = pd.concat([chunk.loc[rec_cond] for chunk in chunks])
+    else:
+        data = pd.concat(chunks)
 
+    # Return raw DataFrame if requested
     if rawframe:
         return data
 
+    # Convert data types
     data = data.astype(dtyp, copy=False)
 
+    # Process drifters
     groups = data.groupby('ID')
+    drifters: List[Drifter] = []
 
-    drifters = []
+    # Default drifter condition if none provided
+    if dr_cond is None:
+        def dr_cond(dr): return True
 
     for ID, records in groups:
-        if len(records) < 2:
-            raise Exception('only one record is found')
-        elif len(records) == 2:
-            if records['TIME'].diff().reset_index()['TIME'].loc[1] != \
-                    pd.Timedelta(value=6, unit='H'):
-                raise Exception('not 6hr interval\n' + str(records))
-        else:
-            freq = pd.infer_freq(records['TIME'])
+        try:
+            if len(records) < 2:
+                print(
+                    f"Warning: Skipping drifter ID {ID} - only one record found")
+                continue
 
-        if freq != '6H':
-            raise Exception('drifter (ID: {0:8d}) is not 6hr interval'
-                            .format(freq))
+            # Check time interval consistency
+            if len(records) == 2:
+                if records['TIME'].diff().iloc[1] != pd.Timedelta(hours=6):
+                    print(
+                        f"Warning: Skipping drifter ID {ID} - not 6hr interval")
+                    continue
+            else:
+                freq = pd.infer_freq(records['TIME'])
+                if freq != '6H':
+                    print(
+                        f"Warning: Skipping drifter ID {ID} - inconsistent time interval: {freq}")
+                    continue
 
-        records.drop(columns='ID', inplace=True)
-        # records = records.reset_index()
+            # Create drifter object
+            records = records.drop(columns='ID').reset_index(drop=True)
+            dr = Drifter(str(ID), records)
 
-        dr = Drifter(str(ID), records)
+            # Apply drifter condition and add to list if it passes
+            if dr_cond(dr):
+                drifters.append(dr)
 
-        if dr_cond(dr):
-            drifters.append(dr)
+        except Exception as e:
+            print(f"Error processing drifter ID {ID}: {str(e)}")
 
     return DrifterSet(drifters)
 
 
-def parseNHC(filename, encoding='utf-8'):
+def parseNHC(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFrame:
     """
     Parse the Best-Track data from National Hurricane Center (NHC)
     into a pandas.DataFrame.
 
     Note that there are intensive observations to some recent TCs which are
-    valid at 0300, 0900, 1500, 2100 UTCs.  These records can be filtered later.
+    valid at 0300, 0900, 1500, 2100 UTCs. These records can be filtered later.
 
     IDs for NHC is 4-digital year and 2-digital number within the year, since
     the records start on the year of 1851.
@@ -275,59 +318,112 @@ def parseNHC(filename, encoding='utf-8'):
 
     Parameters
     ----------
-    filename: str
-        The file name of the CMA Best-Track data.
-    encoding: str
+    filename: str or Path
+        The file name of the NHC Best-Track data.
+    encoding: str, default 'utf-8'
         Encoding of the file.
 
     Returns
     -------
-    re: pandas.DataFrame
-        Raw data in a pandas.DataFrame.
+    pd.DataFrame
+        Parsed data with columns:
+        ['ID', 'NAME', 'TIME', 'LAT', 'LON', 'TYPE', 'PRS', 'WND']
+
+    Raises
+    ------
+    IOError
+        If the file cannot be opened or read.
+    ValueError
+        If the file format is invalid.
     """
-    re = []
+    records = []
 
-    with open(filename, 'r', encoding=encoding) as f:
-        fileContent = f.readlines()
+    try:
+        with open(filename, 'r', encoding=encoding) as f:
+            file_content = f.readlines()
 
-        for i, line in enumerate(fileContent):
-            if len(line) < 50:
-                tokens = line.split(',')
+            for i, line in enumerate(file_content):
+                # Header lines are shorter than data lines
+                if len(line) < 50:
+                    tokens = line.split(',')
 
-                count = tokens[2].strip()
-                ID = tokens[0].strip()  # unique in NHC
-                NAME = tokens[1].strip()
+                    # Validate header format
+                    if len(tokens) < 3:
+                        print(
+                            f"Warning: Invalid header at line {i+1}, skipping")
+                        continue
 
-                ID = ID[4:8] + ID[2:4]
+                    # Parse header information
+                    ID = tokens[0].strip()      # Unique in NHC
+                    NAME = tokens[1].strip()
+                    count_str = tokens[2].strip()
 
-                if NAME == 'UNNAMED':
-                    NAME = 'NONAME'
+                    # Reformat ID to match other datasets
+                    ID = ID[4:8] + ID[2:4]
 
-                count = int(count)
+                    # Standardize unnamed storms
+                    if NAME == 'UNNAMED':
+                        NAME = 'NONAME'
 
-                strIdx = i + 1
+                    # Convert count to integer
+                    try:
+                        count = int(count_str)
+                    except ValueError:
+                        print(
+                            f"Warning: Invalid count value '{count_str}' at line {i+1}, skipping")
+                        continue
 
-                for ln in fileContent[strIdx:strIdx+count]:
-                    TIME = datetime.strptime(ln[:8] + ln[10:12], "%Y%m%d%H")
-                    TYPE = __get_type_NHC(ln[19:21])
-                    LAT = float(ln[22:27].strip())
-                    LON = float(ln[30:35].strip())
-                    PRS = float(ln[43:47].strip())
-                    WND = float(ln[38:41].strip())
+                    # Start index for data records
+                    start_idx = i + 1
+                    end_idx = min(start_idx + count, len(file_content))
 
-                    if ln[35:36] == 'W':
-                        LON = 360 - LON
+                    # Process all data records for this TC
+                    for j in range(start_idx, end_idx):
+                        try:
+                            line_data = file_content[j]
 
-                    if PRS == -999:
-                        PRS = undef
+                            # Parse data fields with specific positions
+                            date_str = line_data[:8]
+                            time_str = line_data[10:12]
+                            type_code = line_data[19:21].strip()
+                            lat_str = line_data[22:27].strip()
+                            lon_str = line_data[30:35].strip()
+                            lon_hem = line_data[35:36]
+                            wind_str = line_data[38:41].strip()
+                            pres_str = line_data[43:47].strip()
 
-                    if WND == -99 or WND == -999:
-                        WND = undef
+                            # Convert fields to appropriate types
+                            TIME = datetime.strptime(
+                                date_str + time_str, "%Y%m%d%H")
+                            TYPE = __get_type_NHC(type_code)
+                            LAT = float(lat_str)
+                            LON = float(lon_str)
 
-                    re.append((ID, NAME, TIME, LAT, LON, TYPE, PRS, WND))
+                            # Apply hemisphere correction
+                            if lon_hem == 'W':
+                                LON = 360 - LON
 
-    return pd.DataFrame.from_records(re, columns=['ID', 'NAME', 'TIME', 'LAT',
-                                                  'LON', 'TYPE', 'PRS', 'WND'])
+                            # Handle missing values
+                            PRS = undef if pres_str == '-999' else float(
+                                pres_str)
+                            WND = undef if wind_str in [
+                                '-99', '-999'] else float(wind_str)
+
+                            # Add record to results
+                            records.append(
+                                (ID, NAME, TIME, LAT, LON, TYPE, PRS, WND))
+
+                        except (ValueError, IndexError) as e:
+                            print(
+                                f"Error parsing data at line {j+1}: {str(e)}")
+
+    except IOError as e:
+        raise IOError(f"Could not read file {filename}: {str(e)}")
+
+    columns = ['ID', 'NAME', 'TIME', 'LAT', 'LON', 'TYPE', 'PRS', 'WND']
+    result_df = pd.DataFrame.from_records(records, columns=columns)
+
+    return result_df
 
 
 def parseIBTrACS(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFrame:
@@ -465,14 +561,14 @@ def parseCMA(
         try:
             # Read file content
             file_content = __concat_files(path, encoding=encoding)
-            
+
             if not file_content:
                 print(f"Empty file found: {path}")
                 continue
-            
+
             # Extract year from filename
             year = os.path.splitext(os.path.basename(path))[0][2:6]
-            
+
             # Process each TC record block
             for i, line in enumerate(file_content):
                 if line.startswith('66666'):
@@ -480,50 +576,52 @@ def parseCMA(
                         # Parse header information
                         parts = line.split()
                         if len(parts) < 8:
-                            print(f"Warning: Invalid header at line {i+1} in {path}, skipping")
+                            print(
+                                f"Warning: Invalid header at line {i+1} in {path}, skipping")
                             continue
-                        
+
                         count_str = parts[2].strip()
                         IDtmp = parts[3].strip()  # Unique in each year
                         ID = parts[4].strip()     # Official ID
                         NAME = parts[7].strip()
-                        
+
                         # Skip sub-center records - centers split or induced from original TC
                         if NAME.find('(-)') != -1:
                             continue
-                        
+
                         # Standardize nameless TCs
                         if NAME == '' or NAME == '(nameless)':
                             NAME = 'NONAME'
-                        
+
                         # Convert count to integer
                         try:
                             count = int(count_str)
                         except ValueError:
-                            print(f"Warning: Invalid count value '{count_str}' at line {i+1} in {path}, skipping")
+                            print(
+                                f"Warning: Invalid count value '{count_str}' at line {i+1} in {path}, skipping")
                             continue
-                        
+
                         # Process TC with no official ID
                         if ID == '0000':
                             ID = str(year) + '00'
                         else:
                             # Add century to ID
                             ID = str(year)[:2] + ID
-                        
+
                         # Update IDtmp to include full year
                         IDtmp = str(year) + IDtmp[2:]
-                        
+
                         # Start index for data records
                         strIdx = i + 1
                         endIdx = min(strIdx + count, len(file_content))
-                        
+
                         # Process all data records for this TC
                         for j in range(strIdx, endIdx):
                             try:
                                 tokens = file_content[j].split()
                                 if len(tokens) < 6:
                                     continue
-                                
+
                                 # Parse data fields
                                 TIME = datetime.strptime(tokens[0], "%Y%m%d%H")
                                 TYPE = __get_type_CMA(tokens[1])
@@ -531,18 +629,22 @@ def parseCMA(
                                 LON = float(tokens[3]) / 10.0
                                 PRS = float(tokens[4])
                                 WND = float(tokens[5])  # m/s
-                                
-                                records.append((IDtmp, ID, NAME, TIME, LAT, LON, TYPE, PRS, WND))
+
+                                records.append(
+                                    (IDtmp, ID, NAME, TIME, LAT, LON, TYPE, PRS, WND))
                             except (ValueError, IndexError) as e:
-                                print(f"Error parsing data at line {j+1} in {path}: {str(e)}")
+                                print(
+                                    f"Error parsing data at line {j+1} in {path}: {str(e)}")
                     except Exception as e:
-                        print(f"Error processing TC block at line {i+1} in {path}: {str(e)}")
+                        print(
+                            f"Error processing TC block at line {i+1} in {path}: {str(e)}")
         except Exception as e:
             print(f"Error processing file {path}: {str(e)}")
 
-    columns = ['IDtmp', 'ID', 'NAME', 'TIME', 'LAT', 'LON', 'TYPE', 'PRS', 'WND']
+    columns = ['IDtmp', 'ID', 'NAME', 'TIME',
+               'LAT', 'LON', 'TYPE', 'PRS', 'WND']
     result_df = pd.DataFrame.from_records(records, columns=columns)
-    
+
     return result_df
 
 
@@ -584,7 +686,7 @@ def parseJMA(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFram
     # Convert Path to string if needed
     if isinstance(filename, Path):
         filename = str(filename)
-        
+
     records = []
 
     try:
@@ -598,20 +700,23 @@ def parseJMA(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFram
                     count_str = line[12:15].strip()
                     ID = line[21:25].strip()  # unique ID
                     IDtmp = line[6:10].strip()
-                    NAME = line[30:50].strip() or 'NONAME'  # Default to 'NONAME' if empty
-                    
+                    # Default to 'NONAME' if empty
+                    NAME = line[30:50].strip() or 'NONAME'
+
                     try:
                         count = int(count_str)
                     except ValueError:
-                        print(f"Warning: Invalid count value '{count_str}' at line {i+1}, skipping")
+                        print(
+                            f"Warning: Invalid count value '{count_str}' at line {i+1}, skipping")
                         continue
-                    
+
                     # Start index of data records
                     strIdx = i + 1
-                    
+
                     # Check if IDs match
                     if ID != IDtmp:
-                        raise ValueError(f"IDs don't match: {ID} != {IDtmp} at line {i+1}")
+                        raise ValueError(
+                            f"IDs don't match: {ID} != {IDtmp} at line {i+1}")
 
                     # Only process if we have at least one data record
                     if strIdx < len(file_content):
@@ -619,49 +724,52 @@ def parseJMA(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFram
                         tokens = file_content[strIdx].split()
                         if not tokens:
                             continue
-                            
+
                         try:
                             time_obj = datetime.strptime(tokens[0], "%y%m%d%H")
                             year = time_obj.year
-                            
+
                             # Handle years in the range 1951-1968
                             if 51 <= int(tokens[0][:2]) <= 68:
                                 year -= 100
-                                
+
                             # Add century to ID
                             century_prefix = str(year)[:2]
                             ID_with_century = century_prefix + ID
-                            
+
                             # Process all data records for this TC
                             for j in range(strIdx, min(strIdx + count, len(file_content))):
                                 tokens = file_content[j].split()
                                 if len(tokens) < 6:
                                     continue
-                                
+
                                 # Parse data fields
                                 TIME = datetime.strptime(tokens[0], "%y%m%d%H")
-                                
+
                                 # Handle years in the range 1951-1968
                                 if 51 <= int(tokens[0][:2]) <= 68:
                                     TIME = TIME.replace(year=TIME.year-100)
-                                    
+
                                 TYPE = __get_type_JMA(tokens[2])
                                 LAT = float(tokens[3]) / 10.0
                                 LON = float(tokens[4]) / 10.0
                                 PRS = float(tokens[5])
-                                
+
                                 # Wind data may be missing
-                                WND = float(tokens[6]) if len(tokens) > 6 else undef
-                                
-                                records.append((ID_with_century, NAME, TIME, LAT, LON, TYPE, PRS, WND))
+                                WND = float(tokens[6]) if len(
+                                    tokens) > 6 else undef
+
+                                records.append(
+                                    (ID_with_century, NAME, TIME, LAT, LON, TYPE, PRS, WND))
                         except (ValueError, IndexError) as e:
-                            print(f"Error parsing data at line {strIdx+1}: {str(e)}")
+                            print(
+                                f"Error parsing data at line {strIdx+1}: {str(e)}")
     except IOError as e:
         raise IOError(f"Could not read file {filename}: {str(e)}")
 
     columns = ['ID', 'NAME', 'TIME', 'LAT', 'LON', 'TYPE', 'PRS', 'WND']
     result_df = pd.DataFrame.from_records(records, columns=columns)
-    
+
     return result_df
 
 
@@ -712,29 +820,29 @@ def parseJTWC(
 
     # Pre-allocate list for records with estimated capacity
     records = []
-    
+
     for path in paths:
         try:
             # Read file content
             file_content = __concat_files(path, encoding=encoding)
-            
+
             if not file_content:
                 print(f'Empty file found: {path}')
                 continue
-                
+
             # Extract ID from filename
             file_basename = os.path.splitext(os.path.basename(path))[0]
-            
+
             # Parse year prefix and TC number
             year_prefix = file_content[0][10:12]
             tc_number = file_content[0][4:6]
-            
+
             # Determine full ID with century
             if int(year_prefix) >= 45:  # Pre-2000s
                 full_id = f"19{year_prefix}{tc_number}"
             else:
                 full_id = f"20{year_prefix}{tc_number}"
-            
+
             # Process all lines in the file
             for line in file_content:
                 # Parse data fields with specific positions
@@ -745,35 +853,37 @@ def parseJTWC(
                 lon_hem = line[45:46]
                 wind_str = line[47:51]
                 pres_str = line[52:57].strip()
-                
+
                 try:
                     # Convert fields to appropriate types
                     time = datetime.strptime(time_str, "%Y%m%d%H")
                     lat = float(lat_str) / 10.0
                     lon = float(lon_str) / 10.0
                     wind = float(wind_str)
-                    
+
                     if lat_hem == 'S':
                         lat = -lat
                     if lon_hem == 'W':
                         lon = 360.0 - lon
-                    
+
                     pres = float(pres_str) if pres_str else undef
-                    
+
                     if wind == -999:
                         wind = undef
-                    
-                    records.append((file_basename, full_id, 'NONAME', time, lat, lon, pres, wind))
-                    
+
+                    records.append(
+                        (file_basename, full_id, 'NONAME', time, lat, lon, pres, wind))
+
                 except (ValueError, IndexError) as e:
-                    print(f"Error parsing line in {path}: {line.strip()}\n{str(e)}")
-                
+                    print(
+                        f"Error parsing line in {path}: {line.strip()}\n{str(e)}")
+
         except Exception as e:
             print(f"Error processing file {path}: {str(e)}")
-    
+
     columns = ['IDtmp', 'ID', 'NAME', 'TIME', 'LAT', 'LON', 'PRS', 'WND']
     result_df = pd.DataFrame.from_records(records, columns=columns)
-    
+
     return result_df
 
 
