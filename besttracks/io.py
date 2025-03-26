@@ -586,14 +586,17 @@ def parseJMA(filename, encoding='utf-8'):
                                                   'LON', 'TYPE', 'PRS', 'WND'])
 
 
-def parseJTWC(filenames, encoding='utf-8'):
+def parseJTWC(
+    filenames: Union[str, Sequence[Union[str, Path]]],
+    encoding: str = 'utf-8'
+) -> pd.DataFrame:
     """
     Parse the Best-Track data from Joint Typhoon Warning Center (JTWC)
     into a pandas.DataFrame.
 
-    Note that there is no official ID and name for each TC.  So the ID is
+    Note that there is no official ID and name for each TC. So the ID is
     a simple composite of year + number of TC, while the name is the
-    composite of basin (e.g., WP) + ID.  Also there are some duplicated data.
+    composite of basin (e.g., WP) + ID. Also there are some duplicated data.
 
     The maximum surface wind speed is defined as *1-min* averaged 10m wind
     speed in unit of *knot*.
@@ -601,73 +604,98 @@ def parseJTWC(filenames, encoding='utf-8'):
     Possible errors in the original txt files:
     - bwp231969.txt, time 1969100000 should be 1969100100?
 
-    Reference: https://www.metoc.navy.mil/jtwc/jtwc.html?best-tracks
-
     Parameters
     ----------
-    filenames : str
-        The file name(s) of the JTWC Best-Track data.
-    encoding : str
-        Encoding of the file.
+    filenames : str or sequence of str or Path
+        The file name(s) or pattern of the JTWC Best-Track data.
+    encoding : str, default 'utf-8'
+        Encoding of the files.
 
     Returns
     -------
-    re: pandas.DataFrame
-        Raw data in a pandas.DataFrame.
+    pd.DataFrame
+        Parsed data with columns:
+        ['IDtmp', 'ID', 'NAME', 'TIME', 'LAT', 'LON', 'PRS', 'WND']
+
+    Raises
+    ------
+    OSError
+        If no files match the provided pattern.
     """
+    # Handle input file patterns/paths
     if isinstance(filenames, str):
         paths = sorted(glob(filenames))
     else:
         paths = [str(p) if isinstance(p, Path) else p for p in filenames]
 
     if not paths:
-        raise OSError("no files to open")
+        raise OSError(f"No files found matching pattern: {filenames}")
 
-    re = []
-
-    for p in paths:
-        fileContent = __concat_files(p, encoding=encoding)
-
-        IDtmp = os.path.splitext(os.path.basename(p))[0]
-
-        if fileContent != []:
-            pre = fileContent[0][10:12]
-            ID = pre + fileContent[0][4:6]
-
-            if int(pre) >= 45:
-                ID = '19' + ID
+    # Pre-allocate list for records with estimated capacity
+    records = []
+    
+    for path in paths:
+        try:
+            # Read file content
+            file_content = __concat_files(path, encoding=encoding)
+            
+            if not file_content:
+                print(f'Empty file found: {path}')
+                continue
+                
+            # Extract ID from filename
+            file_basename = os.path.splitext(os.path.basename(path))[0]
+            
+            # Parse year prefix and TC number
+            year_prefix = file_content[0][10:12]
+            tc_number = file_content[0][4:6]
+            
+            # Determine full ID with century
+            if int(year_prefix) >= 45:  # Pre-2000s
+                full_id = f"19{year_prefix}{tc_number}"
             else:
-                ID = '20' + ID
-
-            for ln in fileContent:
-                # basin= ln[:2]
-                TIME = datetime.strptime(ln[8:18], "%Y%m%d%H")
-                LAT = float(ln[35:38]) / 10.0
-                LON = float(ln[41:45]) / 10.0
-                WND = float(ln[47:51])
-
-                if ln[38:39] == 'S':
-                    LAT = -LAT
-
-                if ln[45:46] == 'W':
-                    LON = 360.0 - LON
-
-                tmp = ln[52:57].strip()
-                if tmp == '':
-                    PRS = undef
-                else:
-                    PRS = float(tmp)
-
-                if WND == -999:
-                    WND = undef
-
-                re.append((IDtmp, ID, 'NONAME', TIME, LAT, LON, PRS, WND))
-        else:
-            print('empty file is found: ' + p)
-
-    return pd.DataFrame.from_records(re, columns=['IDtmp', 'ID', 'NAME',
-                                                  'TIME', 'LAT', 'LON',
-                                                  'PRS', 'WND'])
+                full_id = f"20{year_prefix}{tc_number}"
+            
+            # Process all lines in the file
+            for line in file_content:
+                # Parse data fields with specific positions
+                time_str = line[8:18]
+                lat_str = line[35:38]
+                lat_hem = line[38:39]
+                lon_str = line[41:45]
+                lon_hem = line[45:46]
+                wind_str = line[47:51]
+                pres_str = line[52:57].strip()
+                
+                try:
+                    # Convert fields to appropriate types
+                    time = datetime.strptime(time_str, "%Y%m%d%H")
+                    lat = float(lat_str) / 10.0
+                    lon = float(lon_str) / 10.0
+                    wind = float(wind_str)
+                    
+                    if lat_hem == 'S':
+                        lat = -lat
+                    if lon_hem == 'W':
+                        lon = 360.0 - lon
+                    
+                    pres = float(pres_str) if pres_str else undef
+                    
+                    if wind == -999:
+                        wind = undef
+                    
+                    records.append((file_basename, full_id, 'NONAME', time, lat, lon, pres, wind))
+                    
+                except (ValueError, IndexError) as e:
+                    print(f"Error parsing line in {path}: {line.strip()}\n{str(e)}")
+                
+        except Exception as e:
+            print(f"Error processing file {path}: {str(e)}")
+    
+    columns = ['IDtmp', 'ID', 'NAME', 'TIME', 'LAT', 'LON', 'PRS', 'WND']
+    result_df = pd.DataFrame.from_records(records, columns=columns)
+    
+    return result_df
 
 
 def parseBABJ(
