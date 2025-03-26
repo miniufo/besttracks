@@ -34,7 +34,8 @@ Up to now, the datasets from the above agencies are supported.  It would be good
 
 ## 2. How to install
 **Requirements**
-`besttracks` is developed under the environment with `numpy` (=version 1.15.4), `pandas` (=version 1.0.3), `xarray` (=version 0.15.1), `matplotlib` (=version 3.3.1), and `cartopy` (=version 0.18.0).  Older versions of these packages are not well tested.
+`besttracks` is developed under the environment with `numpy` (=version 1.15.4), `pandas` (=version 1.0.3), `xarray` (=version 0.15.1), `matplotlib` (=version 3.3.1).  Older versions of these packages are not well tested.
+> **Note**: Older versions of these packages are not well tested. For `cartopy`, it is highly recommended to use version `0.22.0` or higher, as it can be easily installed via `pip` and ensures better compatibility with modern Python environments.
 
 
 **Install from github**
