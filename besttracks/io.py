@@ -670,65 +670,102 @@ def parseJTWC(filenames, encoding='utf-8'):
                                                   'PRS', 'WND'])
 
 
-def parseBABJ(filenames, encoding='GBK'):
+def parseBABJ(
+    filenames: Union[str, Sequence[Union[str, Path]]],
+    encoding: str = 'GBK'
+) -> pd.DataFrame:
     """
     Parse China Meteorological Administration (CMA) operational forecast data
     (babj format) into a pandas.DataFrame.
 
     Note that the data use Beijing time and they are changed to UTC during the
-    parsing.  We also remove those records with pressure data undefined.
+    parsing. Records with undefined pressure data (PRS=9999.0) are removed.
 
     Parameters
     ----------
-    filenames: str
-        The file name of the BABJ data.
-    encoding : str
-        Encoding of the file.
+    filenames: str or sequence of str or Path
+        The file name pattern or list of files containing BABJ format data.
+    encoding: str, default 'GBK'
+        Character encoding of the input files.
 
     Returns
     -------
-    re: pandas.DataFrame
-        Raw data in a pandas.DataFrame.
+    pd.DataFrame
+        Parsed forecast data with columns:
+        ['ID', 'NAME', 'TIME', 'FCST', 'LAT', 'LON', 'PRS', 'WND']
+        where TIME is converted from Beijing time to UTC.
+
+    Raises
+    ------
+    ValueError
+        If no files match the provided pattern or if file format is invalid.
     """
     paths = sorted(glob(filenames))
 
-    re = []
+    if not paths:
+        raise ValueError(f"No files found matching pattern: {filenames}")
+
+    records = []
 
     for path in paths:
-        with open(path, 'r', encoding=encoding) as f:
-            fileContent = f.readlines()
+        try:
+            with open(path, 'r', encoding=encoding) as f:
+                file_content = f.readlines()
 
-            tokens = fileContent[1].split()
+                if len(file_content) < 2:
+                    print(
+                        f"Warning: File {path} has insufficient data, skipping")
+                    continue
 
-            NAME = tokens[0]
-            ID = tokens[1]
-            count = tokens[3]
+                tokens = file_content[1].split()
+                if len(tokens) < 4:
+                    print(f"Warning: Invalid header in {path}, skipping")
+                    continue
 
-            count = int(count)
+                name = tokens[0]
+                tc_id = tokens[1]
+                try:
+                    count = int(tokens[3])
+                except ValueError:
+                    print(f"Warning: Invalid count value in {path}, skipping")
+                    continue
 
-            strIdx = 3
+                start_idx = 3
+                end_idx = min(start_idx + count, len(file_content))
 
-            for ln in fileContent[strIdx:strIdx+count]:
-                tokens = ln.split()
+                for line in file_content[start_idx:end_idx]:
+                    tokens = line.split()
+                    if len(tokens) < 9:
+                        continue
 
-                timestr = tokens[0] + tokens[1] + tokens[2] + tokens[3]
+                    time_str = tokens[0] + tokens[1] + tokens[2] + tokens[3]
 
-                # change BJ time to UTC
-                TIME = datetime.strptime(timestr, "%Y%m%d%H") \
-                    - timedelta(hours=8)
-                FCST = int(tokens[4])
-                LON = float(tokens[5])
-                LAT = float(tokens[6])
-                PRS = float(tokens[7])
-                WND = float(tokens[8])
+                    try:
+                        time = datetime.strptime(
+                            time_str, "%Y%m%d%H") - timedelta(hours=8)
+                        fcst = int(tokens[4])
+                        lon = float(tokens[5])
+                        lat = float(tokens[6])
+                        prs = float(tokens[7])
+                        wnd = float(tokens[8])
 
-                if PRS != 9999.0:
-                    re.append((ID, NAME, TIME, FCST, LAT, LON, PRS, WND))
-                else:
-                    print('remove undef in ' + ID + ':\n' + ln.strip())
+                        if prs != 9999.0:
+                            records.append(
+                                (tc_id, name, time, fcst, lat, lon, prs, wnd))
+                        else:
+                            print(
+                                f"Skipping record with undefined pressure in {tc_id}: {line.strip()}")
+                    except (ValueError, IndexError) as e:
+                        print(
+                            f"Error parsing line in {path}: {line.strip()}\n{str(e)}")
 
-    return pd.DataFrame.from_records(re, columns=['ID', 'NAME', 'TIME', 'FCST',
-                                                  'LAT', 'LON', 'PRS', 'WND'])
+        except Exception as e:
+            print(f"Error processing file {path}: {str(e)}")
+
+    columns = ['ID', 'NAME', 'TIME', 'FCST', 'LAT', 'LON', 'PRS', 'WND']
+    result_df = pd.DataFrame.from_records(records, columns=columns)
+
+    return result_df
 
 
 """
