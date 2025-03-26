@@ -413,15 +413,18 @@ def parseIBTrACS(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.Data
     return df
 
 
-def parseCMA(filenames, encoding='utf-8'):
+def parseCMA(
+    filenames: Union[str, Sequence[Union[str, Path]]],
+    encoding: str = 'utf-8'
+) -> pd.DataFrame:
     """
     Parse the Best-Track data from China Meteorological Administration (CMA)
     into a pandas.DataFrame.
 
     Note that there are sub-center records which refers to a center that was
-    split or induced from the original TC circulation center.  Currently, these
-    records are removed during parsing.  Also there are some TCs without any
-    official IDs (e.g., 0000) but have names.  These are modified to include
+    split or induced from the original TC circulation center. Currently, these
+    records are removed during parsing. Also there are some TCs without any
+    official IDs (e.g., 0000) but have names. These are modified to include
     the year as ID=199100.
 
     The maximum surface wind speed is defined as *2-min* averaged 10m wind
@@ -431,77 +434,116 @@ def parseCMA(filenames, encoding='utf-8'):
 
     Parameters
     ----------
-    filenames: str
-        The file name(s) of the CMA Best-Track data.
-    encoding: str
-        Encoding of the file.
+    filenames: str or sequence of str or Path
+        The file name pattern or list of files containing CMA Best-Track data.
+    encoding: str, default 'utf-8'
+        Encoding of the input files.
 
     Returns
     -------
-    re: pandas.DataFrame
-        Raw data (excluding sub-center records) in a pandas.DataFrame.
+    pd.DataFrame
+        Parsed data (excluding sub-center records) with columns:
+        ['IDtmp', 'ID', 'NAME', 'TIME', 'LAT', 'LON', 'TYPE', 'PRS', 'WND']
+
+    Raises
+    ------
+    OSError
+        If no files match the provided pattern.
     """
+    # Handle input file patterns/paths
     if isinstance(filenames, str):
         paths = sorted(glob(filenames))
     else:
         paths = [str(p) if isinstance(p, Path) else p for p in filenames]
 
     if not paths:
-        raise OSError("no files to open")
+        raise OSError(f"No files found matching pattern: {filenames}")
 
-    re = []
+    records = []
 
-    for p in paths:
-        fileContent = __concat_files(p, encoding=encoding)
+    for path in paths:
+        try:
+            # Read file content
+            file_content = __concat_files(path, encoding=encoding)
+            
+            if not file_content:
+                print(f"Empty file found: {path}")
+                continue
+            
+            # Extract year from filename
+            year = os.path.splitext(os.path.basename(path))[0][2:6]
+            
+            # Process each TC record block
+            for i, line in enumerate(file_content):
+                if line.startswith('66666'):
+                    try:
+                        # Parse header information
+                        parts = line.split()
+                        if len(parts) < 8:
+                            print(f"Warning: Invalid header at line {i+1} in {path}, skipping")
+                            continue
+                        
+                        count_str = parts[2].strip()
+                        IDtmp = parts[3].strip()  # Unique in each year
+                        ID = parts[4].strip()     # Official ID
+                        NAME = parts[7].strip()
+                        
+                        # Skip sub-center records - centers split or induced from original TC
+                        if NAME.find('(-)') != -1:
+                            continue
+                        
+                        # Standardize nameless TCs
+                        if NAME == '' or NAME == '(nameless)':
+                            NAME = 'NONAME'
+                        
+                        # Convert count to integer
+                        try:
+                            count = int(count_str)
+                        except ValueError:
+                            print(f"Warning: Invalid count value '{count_str}' at line {i+1} in {path}, skipping")
+                            continue
+                        
+                        # Process TC with no official ID
+                        if ID == '0000':
+                            ID = str(year) + '00'
+                        else:
+                            # Add century to ID
+                            ID = str(year)[:2] + ID
+                        
+                        # Update IDtmp to include full year
+                        IDtmp = str(year) + IDtmp[2:]
+                        
+                        # Start index for data records
+                        strIdx = i + 1
+                        endIdx = min(strIdx + count, len(file_content))
+                        
+                        # Process all data records for this TC
+                        for j in range(strIdx, endIdx):
+                            try:
+                                tokens = file_content[j].split()
+                                if len(tokens) < 6:
+                                    continue
+                                
+                                # Parse data fields
+                                TIME = datetime.strptime(tokens[0], "%Y%m%d%H")
+                                TYPE = __get_type_CMA(tokens[1])
+                                LAT = float(tokens[2]) / 10.0
+                                LON = float(tokens[3]) / 10.0
+                                PRS = float(tokens[4])
+                                WND = float(tokens[5])  # m/s
+                                
+                                records.append((IDtmp, ID, NAME, TIME, LAT, LON, TYPE, PRS, WND))
+                            except (ValueError, IndexError) as e:
+                                print(f"Error parsing data at line {j+1} in {path}: {str(e)}")
+                    except Exception as e:
+                        print(f"Error processing TC block at line {i+1} in {path}: {str(e)}")
+        except Exception as e:
+            print(f"Error processing file {path}: {str(e)}")
 
-        year = os.path.splitext(os.path.basename(p))[0][2:6]
-
-        for i, line in enumerate(fileContent):
-            if line.startswith('66666'):
-                parts = line.split()
-
-                count = parts[2].strip()
-                IDtmp = parts[3].strip()  # this is unique in each year
-                ID = parts[4].strip()  # official ID
-                NAME = parts[7].strip()
-                count = int(count)
-                strIdx = i + 1
-
-                # skip sub-center records.  The sub-center refers to a center
-                # that was split or induced from the original tropical cyclone
-                # circulation center.
-                if NAME.find('(-)') != -1:
-                    continue
-
-                if NAME == '' or NAME == '(nameless)':
-                    NAME = 'NONAME'
-
-                # Parts of the records do not have official IDs (ID == '0000')
-                # We modify them to contain at least information of year
-                if ID == '0000':
-                    ID = str(year) + '00'
-                else:
-                    # add century to ID
-                    ID = str(year)[:2] + ID
-
-                IDtmp = str(year) + IDtmp[2:]
-
-                for ln in fileContent[strIdx:strIdx+count]:
-                    tokens = ln.split()
-
-                    TIME = datetime.strptime(tokens[0], "%Y%m%d%H")
-                    TYPE = __get_type_CMA(tokens[1])
-                    LAT = float(tokens[2]) / 10.0
-                    LON = float(tokens[3]) / 10.0
-                    PRS = float(tokens[4])
-                    WND = float(tokens[5])  # m/s
-
-                    re.append((IDtmp, ID, NAME, TIME,
-                              LAT, LON, TYPE, PRS, WND))
-
-    return pd.DataFrame.from_records(re, columns=['IDtmp', 'ID', 'NAME',
-                                                  'TIME', 'LAT', 'LON', 'TYPE',
-                                                  'PRS', 'WND'])
+    columns = ['IDtmp', 'ID', 'NAME', 'TIME', 'LAT', 'LON', 'TYPE', 'PRS', 'WND']
+    result_df = pd.DataFrame.from_records(records, columns=columns)
+    
+    return result_df
 
 
 def parseJMA(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFrame:
