@@ -504,14 +504,14 @@ def parseCMA(filenames, encoding='utf-8'):
                                                   'PRS', 'WND'])
 
 
-def parseJMA(filename, encoding='utf-8'):
+def parseJMA(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFrame:
     """
     Parse the Best-Track data from Regional Specialized Meteorological
     Center (RSMC) Tokyo-Typhoon Center, Japan Meteorological Agency (JMA)
     into a pandas.DataFrame.
 
     Note that there are intensive observations to some recent TCs which are
-    valid at 0300, 0900, 1500, 2100 UTCs.  These records can be filtered later.
+    valid at 0300, 0900, 1500, 2100 UTCs. These records can be filtered later.
 
     The maximum surface wind speed is defined as *10-min* averaged 10m wind
     speed in unit of *knot*.
@@ -521,69 +521,106 @@ def parseJMA(filename, encoding='utf-8'):
 
     Parameters
     ----------
-    filename : str
+    filename : str or Path
         The file name of the JMA Best-Track data.
-    encoding : str
+    encoding : str, default 'utf-8'
         Encoding of the file.
 
     Returns
     -------
-    re: pandas.DataFrame
-        Raw data in a pandas.DataFrame.
+    pd.DataFrame
+        Parsed data with columns:
+        ['ID', 'NAME', 'TIME', 'LAT', 'LON', 'TYPE', 'PRS', 'WND']
+
+    Raises
+    ------
+    ValueError
+        If the file format is invalid or IDs don't match.
+    IOError
+        If the file cannot be opened or read.
     """
-    re = []
+    # Convert Path to string if needed
+    if isinstance(filename, Path):
+        filename = str(filename)
+        
+    records = []
 
-    with open(filename, 'r', encoding=encoding) as f:
-        fileContent = f.readlines()
+    try:
+        with open(filename, 'r', encoding=encoding) as f:
+            # Read all lines at once - more efficient than reading line by line
+            file_content = f.readlines()
 
-        for i, line in enumerate(fileContent):
-            if line.startswith('66666'):
-                count = line[12:15].strip()
-                ID = line[21:25].strip()  # unique
-                IDtmp = line[6:10].strip()
-                NAME = line[30:50].strip()
-                count = int(count)
-                strIdx = i + 1
+            for i, line in enumerate(file_content):
+                if line.startswith('66666'):
+                    # Parse header information
+                    count_str = line[12:15].strip()
+                    ID = line[21:25].strip()  # unique ID
+                    IDtmp = line[6:10].strip()
+                    NAME = line[30:50].strip() or 'NONAME'  # Default to 'NONAME' if empty
+                    
+                    try:
+                        count = int(count_str)
+                    except ValueError:
+                        print(f"Warning: Invalid count value '{count_str}' at line {i+1}, skipping")
+                        continue
+                    
+                    # Start index of data records
+                    strIdx = i + 1
+                    
+                    # Check if IDs match
+                    if ID != IDtmp:
+                        raise ValueError(f"IDs don't match: {ID} != {IDtmp} at line {i+1}")
 
-                if ID != IDtmp:
-                    raise Exception(ID, IDtmp)
+                    # Only process if we have at least one data record
+                    if strIdx < len(file_content):
+                        # Get the year from the first record
+                        tokens = file_content[strIdx].split()
+                        if not tokens:
+                            continue
+                            
+                        try:
+                            time_obj = datetime.strptime(tokens[0], "%y%m%d%H")
+                            year = time_obj.year
+                            
+                            # Handle years in the range 1951-1968
+                            if 51 <= int(tokens[0][:2]) <= 68:
+                                year -= 100
+                                
+                            # Add century to ID
+                            century_prefix = str(year)[:2]
+                            ID_with_century = century_prefix + ID
+                            
+                            # Process all data records for this TC
+                            for j in range(strIdx, min(strIdx + count, len(file_content))):
+                                tokens = file_content[j].split()
+                                if len(tokens) < 6:
+                                    continue
+                                
+                                # Parse data fields
+                                TIME = datetime.strptime(tokens[0], "%y%m%d%H")
+                                
+                                # Handle years in the range 1951-1968
+                                if 51 <= int(tokens[0][:2]) <= 68:
+                                    TIME = TIME.replace(year=TIME.year-100)
+                                    
+                                TYPE = __get_type_JMA(tokens[2])
+                                LAT = float(tokens[3]) / 10.0
+                                LON = float(tokens[4]) / 10.0
+                                PRS = float(tokens[5])
+                                
+                                # Wind data may be missing
+                                WND = float(tokens[6]) if len(tokens) > 6 else undef
+                                
+                                records.append((ID_with_century, NAME, TIME, LAT, LON, TYPE, PRS, WND))
+                        except (ValueError, IndexError) as e:
+                            print(f"Error parsing data at line {strIdx+1}: {str(e)}")
+    except IOError as e:
+        raise IOError(f"Could not read file {filename}: {str(e)}")
 
-                tokens = fileContent[strIdx].split()
-                year = datetime.strptime(tokens[0],
-                                         "%y%m%d%H").year
-
-                # don't let year = 2069 happen
-                if 51 <= int(tokens[0][:2]) <= 68:
-                    year -= 100
-
-                # add century to ID
-                ID = str(year)[:2] + ID
-
-                if NAME == '':
-                    NAME = 'NONAME'
-
-                for ln in fileContent[strIdx:strIdx+count]:
-                    tokens = ln.split()
-
-                    TIME = datetime.strptime(tokens[0], "%y%m%d%H")
-                    TYPE = __get_type_JMA(tokens[2])
-                    LAT = float(tokens[3]) / 10.0
-                    LON = float(tokens[4]) / 10.0
-                    PRS = float(tokens[5])
-
-                    # don't let year = 2069 happen
-                    if 51 <= int(tokens[0][:2]) <= 68:
-                        TIME = TIME.replace(year=TIME.year-100)
-
-                    if len(tokens) <= 6:
-                        WND = undef
-                    else:
-                        WND = float(tokens[6])
-
-                    re.append((ID, NAME, TIME, LAT, LON, TYPE, PRS, WND))
-
-    return pd.DataFrame.from_records(re, columns=['ID', 'NAME', 'TIME', 'LAT',
-                                                  'LON', 'TYPE', 'PRS', 'WND'])
+    columns = ['ID', 'NAME', 'TIME', 'LAT', 'LON', 'TYPE', 'PRS', 'WND']
+    result_df = pd.DataFrame.from_records(records, columns=columns)
+    
+    return result_df
 
 
 def parseJTWC(
