@@ -546,11 +546,9 @@ def parseCMA(
     OSError
         If no files match the provided pattern.
     """
-    # Handle input file patterns/paths
-    if isinstance(filenames, str):
-        paths = sorted(glob(filenames))
-    else:
-        paths = [str(p) if isinstance(p, Path) else p for p in filenames]
+    # Handle input file patterns/paths using the type information from signature
+    paths = sorted(glob(filenames)) if isinstance(filenames, str) else [
+        str(p) if isinstance(p, Path) else p for p in filenames]
 
     if not paths:
         raise OSError(f"No files found matching pattern: {filenames}")
@@ -683,10 +681,6 @@ def parseJMA(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFram
     IOError
         If the file cannot be opened or read.
     """
-    # Convert Path to string if needed
-    if isinstance(filename, Path):
-        filename = str(filename)
-
     records = []
 
     try:
