@@ -137,7 +137,7 @@ class Particle(object):
             Duration of this particle in unit of day
         """
         duration = np.ptp(self.records['TIME'])
-        return pd.to_timedelta([duration])[0].total_seconds() / 3600.0 / 24.0
+        return pd.to_timedelta(duration) / pd.Timedelta(days=1)
     
     
     def resample(self, *args, **kwargs):

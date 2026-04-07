@@ -8,6 +8,7 @@ Copyright 2018. All rights reserved. Use is subject to license terms.
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import cartopy.crs as ccrs
 import cartopy.feature as cfeat
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
@@ -18,7 +19,7 @@ undef = -9999
 """
 Some useful functions for plotting
 """
-def plot_tracks(ps, figsize=(12,6), fontsize=15, size=60,
+def plot_tracks(ps, ax=None, figsize=(10,5), fontsize=13, size=60,
                 linewidth=2, line_color=(0.4, 0.4, 0.4), add_legend=False,
                 scatter_color=(0.3, 0.3, 0.3),
                 legend_loc='upper left', xlint=None, ylint=None, title=None,
@@ -36,9 +37,13 @@ def plot_tracks(ps, figsize=(12,6), fontsize=15, size=60,
     ax: axe
         Plot axe handle.
     """
-    _, ax, _, (xmin, xmax, ymin, ymax) = \
-            __prepare_background(ps, xlint, ylint, figsize, fontsize,
-                                 xlim, ylim, adjust=True)
+    if ax == None:
+        _, ax, _, (xmin, xmax, ymin, ymax) = \
+                __prepare_background(ps, xlint, ylint, figsize, fontsize,
+                                     xlim, ylim, adjust=True)
+    else:
+        xmin, xmax = xlim
+        ymin, ymax = ylim
     
     for i, p in enumerate(ps):
         if i != 0:
@@ -106,7 +111,7 @@ def plot_tracks(ps, figsize=(12,6), fontsize=15, size=60,
     return ax
 
 
-def plot_track(p, ax=None, figsize=(12,6), fontsize=15, size=60,
+def plot_track(p, ax=None, figsize=(10,5), fontsize=13, size=60,
                line_color=(0.4, 0.4, 0.4), add_legend=False,
                scatter_color=(0.3, 0.3, 0.3), linewidth=2,
                legend_loc='upper left', xlint=None, ylint=None, title=None,
@@ -151,50 +156,50 @@ def plot_track(p, ax=None, figsize=(12,6), fontsize=15, size=60,
         ofs = 90
         if 'SCALE' in recs:
             ax.scatter([xmin-ofs], [ymin-ofs], color='b', s=size/3,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='TD stage')
             ax.scatter([xmin-ofs], [ymin-ofs], color=(0.3, 1, 0.3), s=size/3,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='TS stage')
             ax.scatter([xmin-ofs], [ymin-ofs], color='yellow', s=size/2,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='CAT1 stage')
             ax.scatter([xmin-ofs], [ymin-ofs], color='orange', s=size/2,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='CAT2 stage')
             ax.scatter([xmin-ofs], [ymin-ofs], color='pink', s=size,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='CAT3 stage')
             ax.scatter([xmin-ofs], [ymin-ofs], color='r', s=size,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='CAT4 stage')
             ax.scatter([xmin-ofs], [ymin-ofs], color=(0.6, 0, 0), s=size,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='CAT5 stage')
             ax.legend(loc=legend_loc, fontsize=fontsize-3, edgecolor='k',
                       ncol=1, borderaxespad=0.8, frameon=True, shadow=False)
         else:
             ax.scatter([xmin-ofs], [ymin-ofs], color='b', s=size/3,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='TD stage')
             ax.scatter([xmin-ofs], [ymin-ofs], color=(0.3, 1, 0.3), s=size/2,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='TS stage')
             ax.scatter([xmin-ofs], [ymin-ofs], color='r', s=size,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='TY stage')
             ax.scatter([xmin-ofs], [ymin-ofs], color='yellow', s=size/2,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='EC stage')
             ax.scatter([xmin-ofs], [ymin-ofs], color=(0.8, 0.8, 0.8), s=size/3,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5, label='Others')
             ax.legend(loc=legend_loc, fontsize=fontsize-3, edgecolor='k',
                       ncol=1, borderaxespad=0.8, frameon=True, shadow=False)
     
     if not scatteronly:
         ax.plot(recs['LON'], recs['LAT'], color=line_color,
-                transform=ccrs.PlateCarree(), zorder=0, linewidth=linewidth)
+                transform=ccrs.PlateCarree(), zorder=5, linewidth=linewidth)
     
     if not trackonly:
         if 'SCALE' in recs:
@@ -202,43 +207,43 @@ def plot_track(p, ax=None, figsize=(12,6), fontsize=15, size=60,
             tctype = recs['SCALE'] == 'TD'
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color='b', s=size/4,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             #################### TS ####################
             tctype = recs['SCALE'] == 'TS'
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color=(0.3, 1, 0.3), s=size/4,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             #################### TY ####################
             tctype = recs['SCALE'] == 'CAT1'
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color='yellow', s=size/3,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             #################### EC ####################
             tctype = recs['SCALE'] == 'CAT2'
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color='orange', s=size/3,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             #################### OTHERS ####################
             tctype = recs['SCALE'] == 'CAT3'
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color='pink', s=size/2,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             #################### OTHERS ####################
             tctype = recs['SCALE'] == 'CAT4'
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color='r', s=size/2,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             #################### OTHERS ####################
             tctype = recs['SCALE'] == 'CAT5'
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color=(0.6, 0, 0), s=size/2,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             
         elif 'TYPE' in recs:
@@ -246,41 +251,41 @@ def plot_track(p, ax=None, figsize=(12,6), fontsize=15, size=60,
             tctype = recs['TYPE'] == 'TD'
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color='b', s=size/3,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             #################### TS ####################
             tctype = recs['TYPE'].isin(['TS', 'STS'])
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color=(0.3, 1, 0.3), s=size/2,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             #################### TY ####################
             tctype = recs['TYPE'].isin(['TY', 'STY', 'HU'])
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color='r', s=size,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             #################### EC ####################
             tctype = recs['TYPE'].isin(['EC', 'EX'])
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color='yellow', s=size/2,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
             #################### OTHERS ####################
             tctype = recs['TYPE'].isin(['OTHERS', 'NR'])
             data = recs.loc[tctype]
             ax.scatter(data['LON'], data['LAT'], color=(0.8, 0.8, 0.8), s=size/3,
-                       transform=ccrs.PlateCarree(), zorder=1,
+                       transform=ccrs.PlateCarree(), zorder=10,
                        edgecolor='k', linewidth=0.5)
         else:
             data = recs
             ax.scatter(data['LON'], data['LAT'], color=scatter_color, s=size,
-                           transform=ccrs.PlateCarree(), zorder=1,
+                           transform=ccrs.PlateCarree(), zorder=10,
                            edgecolor='k', linewidth=0.8)
     return ax
 
 
-def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=15):
+def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=13):
     """
     Plot the intensity of the given TC.
 
@@ -332,8 +337,8 @@ def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=15):
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
             ax2.tick_params(axis='both', labelsize=fontsize-2)
-            ax1.grid(b=True)
-            ax2.grid(b=True)
+            ax1.grid(visible=True)
+            ax2.grid(visible=True)
             ax1.set_yticks(prslocs_m)
             ax2.set_yticks(wndlocs_m)
             ax1.set_ylim(prsylim_m)
@@ -342,6 +347,7 @@ def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=15):
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
             ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
                            fontsize=fontsize-2)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
             return ax1
             
@@ -351,11 +357,12 @@ def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=15):
             ax1.set_title('intensity for TC {0:s} ({1:s})'.format(tc.name, tc.ID),
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
-            ax1.grid(b=True)
+            ax1.grid(visible=True)
             ax1.set_yticks(prslocs_m)
             ax1.set_ylim(prsylim_m)
             ax1.set_ylim([tim[0], tim.iloc[-1]])
             ax1.set_xlabel('Pressure (hPa)', fontsize=fontsize-2)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
             return ax1
     else:
@@ -371,8 +378,8 @@ def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=15):
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
             ax2.tick_params(axis='both', labelsize=fontsize-2)
-            ax1.grid(b=True)
-            ax2.grid(b=True)
+            ax1.grid(visible=True)
+            ax2.grid(visible=True)
             ax1.set_yticks(prslocs_m)
             ax2.set_yticks(wndlocs_m)
             ax1.set_ylim(prsylim_m)
@@ -381,6 +388,7 @@ def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=15):
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
             ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
                            fontsize=fontsize-2)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
             return ax1
         else:
@@ -393,11 +401,12 @@ def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=15):
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
             ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
                            fontsize=fontsize-2)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
             return ax1
 
 
-def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=15):
+def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=13):
     """
     Plot the intensity of the given TC.
 
@@ -454,8 +463,8 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=15):
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
             ax2.tick_params(axis='both', labelsize=fontsize-2)
-            ax1.grid(b=True)
-            ax2.grid(b=True)
+            ax1.grid(visible=True)
+            ax2.grid(visible=True)
             ax1.set_yticks(prslocs_m)
             ax2.set_yticks(wndlocs_m)
             ax1.set_ylim(prsylim_m)
@@ -464,6 +473,7 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=15):
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
             ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
                            fontsize=fontsize-2)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
             return ax1
             
@@ -487,11 +497,12 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=15):
             ax1.set_title('intensity for TC {0:s} ({1:s})'.format(tc.name, tc.ID),
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
-            ax1.grid(b=True)
+            ax1.grid(visible=True)
             ax1.set_yticks(prslocs_m)
             ax1.set_ylim(prsylim_m)
             ax1.set_ylim([tim[0], tim.iloc[-1]])
             ax1.set_xlabel('Pressure (hPa)', fontsize=fontsize-2)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
             return ax1
     else:
@@ -518,8 +529,8 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=15):
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
             ax2.tick_params(axis='both', labelsize=fontsize-2)
-            ax1.grid(b=True)
-            ax2.grid(b=True)
+            ax1.grid(visible=True)
+            ax2.grid(visible=True)
             ax1.set_yticks(prslocs_m)
             ax2.set_yticks(wndlocs_m)
             ax1.set_ylim(prsylim_m)
@@ -528,6 +539,7 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=15):
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
             ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
                            fontsize=fontsize-2)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
             return ax1
         else:
@@ -540,10 +552,11 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=15):
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
             ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
                            fontsize=fontsize-2)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
             return ax1
 
-def plot(tc, ax=None, figsize=(12,6), fontsize=15, size=60,
+def plot(tc, ax=None, figsize=(10,5), fontsize=13, size=60,
          linewidth=2, line_color=(0.4, 0.4, 0.4), add_legend=True,
          legend_loc='upper left', xlint=None, ylint=None, title=None,
          xlim=None, ylim=None, trackonly=False):
@@ -589,8 +602,8 @@ def plot(tc, ax=None, figsize=(12,6), fontsize=15, size=60,
     plot_intensity(TCplt, ax=ax2, fontsize=fontsize)
 
 
-def binning(lons, lats, var, ax=None, xlim=None, ylim=None, fontsize=15,
-            xlint=None, ylint=None, figsize=(12,5), reso=1,
+def binning(lons, lats, var, ax=None, xlim=None, ylim=None, fontsize=13,
+            xlint=None, ylint=None, figsize=(10,5), reso=1,
             title=None, add_sides=True):
     """
     Binning scatter data into a Eulerian statistical map.
@@ -603,9 +616,10 @@ def binning(lons, lats, var, ax=None, xlim=None, ylim=None, fontsize=15,
     
     x, y, z = __kde2D(lons, lats, var, 1.0)
     
-    ax.contourf(x, y, z, transform=ccrs.PlateCarree(),
-                cmap=__transparent_jet(),
-                levels=21, add_colorbar=True)
+    m1 = ax.contourf(x, y, z, transform=ccrs.PlateCarree(),
+                cmap=__transparent_jet(), levels=21)
+    if fig:
+        fig.colorbar(m1, ax=ax, orientation='horizontal', label='')
     
     if title == None:
         title = 'Gridding stat.'
@@ -650,8 +664,8 @@ def binning(lons, lats, var, ax=None, xlim=None, ylim=None, fontsize=15,
     return ax, (x, y, z)
 
 
-def binning_particle(p, var=None, xlim=None, ylim=None, fontsize=15,
-                     xlint=None, ylint=None, figsize=(12,5), reso=1,
+def binning_particle(p, var=None, xlim=None, ylim=None, fontsize=13,
+                     xlint=None, ylint=None, figsize=(10,5), reso=1,
                      title=None):
     """
     Binning the particle into a Eulerian statistical map.
@@ -672,9 +686,9 @@ def binning_particle(p, var=None, xlim=None, ylim=None, fontsize=15,
                    figsize, reso, title, add_sides=True)
 
 
-def binning_particles(ps, var=None, xlim=None, ylim=None, fontsize=15,
-                xlint=None, ylint=None, figsize=(12,5), reso=1,
-                title=None):
+def binning_particles(ps, var=None, xlim=None, ylim=None, fontsize=13,
+                xlint=None, ylint=None, figsize=(10,5), reso=1,
+                title=None, add_sides=True):
     """
     Binning the ParticleSet into a Eulerian statistical map.
     """
@@ -691,10 +705,10 @@ def binning_particles(ps, var=None, xlim=None, ylim=None, fontsize=15,
         lat = lat[vsm!=0]
     
     return binning(lon, lat, vs, None, xlim, ylim, fontsize, xlint, ylint,
-                     figsize, reso, title, add_sides=True)
+                     figsize, reso, title, add_sides=add_sides)
 
 
-def plot_timeseries(ps, freq='monthly', ax=None, figsize=(12,6), fontsize=16,
+def plot_timeseries(ps, freq='monthly', ax=None, figsize=(10,5), fontsize=14,
                     linewidth=2, add_legend=True, legend_loc='upper left'):
     """
     Plot the track and intensity of the given TC.
