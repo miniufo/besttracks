@@ -236,17 +236,17 @@ def parse_GDPDrifters(
     # Read data from files
     if chunksize is None:
         iters = [pd.read_fwf(f, header=None, colspecs=cols, names=colN,
-                             parse_dates=['TIME'], dtype=dtyp,
-                             date_parser=__parse_datetime)
+                             dtype=dtyp)
                  for f in paths]
         chunks = iters  # No need for iteration when not using chunks
     else:
         iters = [pd.read_fwf(f, header=None, colspecs=cols, names=colN,
-                             parse_dates=['TIME'], iterator=True,
-                             chunksize=chunksize, dtype=dtyp,
-                             date_parser=__parse_datetime)
+                             iterator=True, chunksize=chunksize, dtype=dtyp)
                  for f in paths]
         chunks = [chunk for it in iters for chunk in it]  # Flatten chunks
+
+    for chunk in chunks:
+        chunk['TIME'] = chunk['TIME'].map(__parse_datetime)
 
     # Apply record condition if provided
     if rec_cond is not None:
