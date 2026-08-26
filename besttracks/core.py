@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on 2020.08.01
+Core module of besttracks: data structures for TC and drifter records.
 
-@author: MiniUFO
-Copyright 2018. All rights reserved. Use is subject to license terms.
+Defines ``Particle``, ``TC``, ``Drifter`` and their ``Set`` containers for
+grouping, selecting, and resampling tropical cyclone best-track and
+Lagrangian drifter trajectories.
 """
 import numpy as np
 import pandas as pd
@@ -84,22 +85,23 @@ class Particle(object):
         
         Returns
         ----------
-        re: pandas.DataFrame
-            A new particle containing the records satisfying the conditions
+        re: Particle
+            The particle itself with UO/VO columns added to records.
         """
-        from numpy import cos as cos
-        from numpy import deg2rad as deg2rad
-        
         lons = self.records.LON
         lats = self.records.LAT
         time = self.records.TIME
         
         dlon = finite_difference(lons)
         dlat = finite_difference(lats)
-        dtim = finite_difference(time)[0].seconds
+        # finite_difference returns central diff (interior) and forward/backward
+        # diff (endpoints).  Applying the same operator to time yields a
+        # consistent per-record dt, so the division below is correct even when
+        # the time interval is non-uniform.
+        dtim = finite_difference(time).dt.total_seconds()
         
-        uo = Rearth * deg2rad(dlon * cos(deg2rad(lats))) / dtim
-        vo = Rearth * deg2rad(dlat) / dtim
+        uo = Rearth * np.deg2rad(dlon * np.cos(np.deg2rad(lats))) / dtim
+        vo = Rearth * np.deg2rad(dlat) / dtim
         
         self.records['UO'] = uo
         self.records['VO'] = vo
@@ -193,12 +195,10 @@ class Particle(object):
         re: particle
             A copy of this particle.
         """
-        s = self
-        
         if copy_records:
-            re = type(self)(s.ID, s.records.copy())
+            re = type(self)(self.ID, self.records.copy())
         else:
-            re = type(self)(s.ID, None)
+            re = type(self)(self.ID, None)
         
         return re
     
@@ -218,27 +218,25 @@ class Particle(object):
     
     def __getitem__(self, key):
         """
-        Used to iterate over the particle record.
+        Used to iterate over the particle record or access attributes.
         """
         if isinstance(key, int):
             return self.records.iloc[[key]]
         elif isinstance(key, str):
-            if key in ['ID']:
+            if key in self.__dict__:
                 return self.__dict__[key]
             else:
                 return self.records[key]
         else:
             raise Exception('invalid type of key, should be int or str')
-    
+
     def __repr__(self):
         """
-        Used to print the Drifter.
+        Used to print the Particle.
         """
-        s = self
+        info = ('Particle (ID={0:8s})\n').format(str(self.ID))
         
-        info = ('Particle (ID={0:8s})\n').format(str(s.ID))
-        
-        return info + s.records.__repr__()
+        return info + self.records.__repr__()
 
 
 class TC(Particle):
@@ -290,7 +288,7 @@ class TC(Particle):
         """
         recs = self.records
         
-        if unit is None:
+        if unit is None or unit != self.wndunit:
             if self.wndunit == 'knot':
                 recs['WND'].where(recs['WND']==undef,
                                   recs['WND'] * 0.51444, # to m/s
@@ -301,18 +299,6 @@ class TC(Particle):
                                   recs['WND'] / 0.51444, # to knot
                                   inplace=True)
                 self.wndunit = 'knot'
-        else:
-            if unit != self.wndunit:
-                if self.wndunit == 'knot':
-                    recs['WND'].where(recs['WND']==undef,
-                                      recs['WND'] * 0.51444, # to m/s
-                                      inplace=True)
-                    self.wndunit = 'm/s'
-                else:
-                    recs['WND'].where(recs['WND']==undef,
-                                      recs['WND'] / 0.51444, # to knot
-                                      inplace=True)
-                    self.wndunit = 'knot'
         
         return self
         
@@ -356,14 +342,12 @@ class TC(Particle):
         re: TC
             A copy of this TC.
         """
-        s = self
-        
         if copy_records:
-            re = type(self)(s.ID, s.name, s.year, s.wndunit,
-                    s.fcstTime, s.records.copy())
+            re = type(self)(self.ID, self.name, self.year, self.wndunit,
+                    self.fcstTime, self.records.copy())
         else:
-            re = type(self)(s.ID, s.name, s.year, s.wndunit,
-                    s.fcstTime, None)
+            re = type(self)(self.ID, self.name, self.year, self.wndunit,
+                    self.fcstTime, None)
         
         return re
     
@@ -379,8 +363,14 @@ class TC(Particle):
         prs = self.records['PRS']
         wnd = self.records['WND']
         
-        minP, Ppos = prs.min(), prs.argmin()
-        maxW, Wpos = wnd.max(), wnd.argmax()
+        valid_prs = prs[prs != undef]
+        valid_wnd = wnd[wnd != undef]
+        
+        minP = valid_prs.min() if not valid_prs.empty else undef
+        Ppos = valid_prs.idxmin() if not valid_prs.empty else None
+        
+        maxW = valid_wnd.max() if not valid_wnd.empty else undef
+        Wpos = valid_wnd.idxmax() if not valid_wnd.empty else None
         
         if minP != undef and maxW != undef:
             if Ppos != Wpos:
@@ -389,7 +379,7 @@ class TC(Particle):
                 elif wnd[Ppos] == maxW:
                     return minP, maxW
                 else:
-                    return min(prs[wnd==maxW]), maxW
+                    return valid_prs[wnd==maxW].min() if not valid_prs[wnd==maxW].empty else minP, maxW
         
         return minP, maxW
     
@@ -418,18 +408,17 @@ class TC(Particle):
         """
         Used to print the TC.
         """
-        s = self
-        
         info = ('TC (ID={0:s}, name={1:s}, year={2:4d}, ' +
                'fcstTime={3:s}, unit={4:s})\n') \
-                .format(s.ID, s.name, s.year, str(s.fcstTime), s.wndunit)
+                .format(self.ID, self.name, self.year,
+                        str(self.fcstTime), self.wndunit)
         
-        return info + s.records.__repr__()
+        return info + self.records.__repr__()
 
 
 class Drifter(Particle):
     """
-    This class represents a single tropical cyclone (TC).
+    This class represents a single surface drifter.
     """
     def __init__(self, ID, records):
         """
@@ -454,11 +443,9 @@ class Drifter(Particle):
         """
         Used to print the Drifter.
         """
-        s = self
+        info = ('Drifter (ID={0:8s})\n').format(str(self.ID))
         
-        info = ('Drifter (ID={0:8s})\n').format(s.ID)
-        
-        return info + s.records.__repr__()
+        return info + self.records.__repr__()
 
 
 
@@ -485,24 +472,24 @@ class ParticleSet(object):
     
     def select(self, cond):
         """
-        Select drifter(s) given a condition.
+        Select particle(s) given a condition.
         
         Parameters
         ----------
         cond: lambda expression
-            Whether a drifter meets the condition.
+            Whether a particle meets the condition.
         """
         ps = list(filter(cond, self.particles))
         
         if ps:
             return type(self)(ps)
         else:
-            print('no particles are found')
+            return type(self)([])
     
     
     def groupby(self, field):
         """
-        Group the Particles into different categraries according to field.
+        Group the Particles into different categories according to field.
         
         Parameters
         ----------
@@ -527,7 +514,7 @@ class ParticleSet(object):
         """
         Get total duration of this ParticleSet in unit of days.
         """
-        return sum([p.duration() for p in self.particles])
+        return sum(p.duration() for p in self.particles)
     
     def plot_tracks(self, **kwargs):
         from .utils import plot_tracks
@@ -555,8 +542,11 @@ class ParticleSet(object):
     
     def __repr__(self):
         """
-        Used to print the TC dataset.
+        Used to print the ParticleSet.
         """
+        if len(self.particles) == 0:
+            return 'No particles in this ParticleSet'
+        
         info = []
         
         info.append('Particle dataset:\n')
@@ -626,7 +616,7 @@ class TCSet(ParticleSet):
         """
         Get accumulated cyclone energy (ACE) of the whole dataset.
         """
-        return sum([tc.ace() for tc in self.particles])
+        return sum(tc.ace() for tc in self.particles)
     
     def plot_intensities(self, unit='knot', **kwargs):
         """
@@ -647,14 +637,6 @@ class TCSet(ParticleSet):
         """
         for tc in self.particles:
             tc.change_wind_unit(unit=unit)
-        
-            # if unit != None:
-            #     tc.wndunit = unit
-            # else:
-            #     if tc.wndunit == 'knot':
-            #         tc.wndunit = 'm/s'
-            #     else:
-            #         tc.wndunit = 'knot'
         
         return self
     
@@ -680,7 +662,7 @@ class TCSet(ParticleSet):
         
         info = []
         
-        if self.agency == None:
+        if self.agency is None:
             info.append('TC best-track dataset:\n')
         else:
             info.append('TC best-track dataset ({0:s}):\n'.format(self.agency))
@@ -810,6 +792,9 @@ class DrifterSet(ParticleSet):
         """
         Used to print the drifter dataset.
         """
+        if len(self.particles) == 0:
+            return 'No drifters in this DrifterSet'
+        
         info = []
         
         info.append('drifter dataset:\n')
@@ -832,21 +817,23 @@ Helper (private) methods are defined below
 def finite_difference(array):
     """
     Central finite difference of a given data series.
-    Forword or backword differences are used at the end points.
+    Forward or backward differences are used at the end points.
     
     Returns
     ----------
     re: dataframe or numpy.array
         Difference of original array.
     """
-    if type(array) in [pd.core.series.Series, pd.core.frame.DataFrame]:
+    if isinstance(array, (pd.Series, pd.DataFrame)):
         dataL = array.shift( 1, fill_value=array.iloc[ 0])
         dataR = array.shift(-1, fill_value=array.iloc[-1])
-    elif type(array) in [np.ndarray, np.array]:
-        dataL = array.shift( 1, fill_value=array.iloc[ 0])
-        dataR = array.shift(-1, fill_value=array.iloc[-1])
+    elif isinstance(array, np.ndarray):
+        dataL = np.roll(array, 1)
+        dataL[0] = array[0]
+        dataR = np.roll(array, -1)
+        dataR[-1] = array[-1]
     else:
-        raise Exception('invalid type of input: ' + type(array))
+        raise Exception('invalid type of input: ' + str(type(array)))
     
     # interior is central finite difference
     de = np.ones(len(array))
@@ -863,4 +850,3 @@ Test codes
 """
 if __name__ == '__main__':
     issubclass(type(TCSet), ParticleSet)
-

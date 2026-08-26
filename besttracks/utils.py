@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Created on 2020.08.01
+Utility module of besttracks: plotting and binning helpers.
 
-@author: MiniUFO
-Copyright 2018. All rights reserved. Use is subject to license terms.
+Provides track / intensity plotting via cartopy and matplotlib, and
+temporal / spatial binning utilities for TC and drifter ensembles.
 """
 import numpy as np
 import xarray as xr
@@ -37,7 +37,7 @@ def plot_tracks(ps, ax=None, figsize=(10,5), fontsize=13, size=60,
     ax: axe
         Plot axe handle.
     """
-    if ax == None:
+    if ax is None:
         _, ax, _, (xmin, xmax, ymin, ymax) = \
                 __prepare_background(ps, xlint, ylint, figsize, fontsize,
                                      xlim, ylim, adjust=True)
@@ -58,7 +58,7 @@ def plot_tracks(ps, ax=None, figsize=(10,5), fontsize=13, size=60,
                    xlim=[xmin, xmax], ylim=[ymin, ymax],
                    trackonly=trackonly, scatter_color=scatter_color)
     
-    if title == None:
+    if title is None:
         ax.set_title('tracks', fontsize=fontsize)
     else:
         ax.set_title(title, fontsize=fontsize)
@@ -129,12 +129,12 @@ def plot_track(p, ax=None, figsize=(10,5), fontsize=13, size=60,
     ax: axe
         Plot axe handle.
     """
-    if ax == None:
+    if ax is None:
         _, ax, pplot, (xmin, xmax, ymin, ymax) = \
                     __prepare_background(p, xlint, ylint, figsize, fontsize,
                                          xlim, ylim, adjust=True)
         
-        if title == None:
+        if title is None:
             ax.set_title('track of Particle ({1:s})'
                          .format(str(type(p)),str(pplot.ID)),
                          fontsize=fontsize)
@@ -309,7 +309,7 @@ def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=13):
     
     ax1 = None
     
-    if ax == None:
+    if ax is None:
         fig = plt.figure(figsize=figsize)
         ax1 = fig.add_subplot()
         ax2 = ax1.twinx()
@@ -343,7 +343,7 @@ def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=13):
             ax2.set_yticks(wndlocs_m)
             ax1.set_ylim(prsylim_m)
             ax2.set_ylim(wndylim_m)
-            ax1.set_xlim([tim[0], tim.iloc[-1]])
+            ax1.set_xlim([tim.iloc[0], tim.iloc[-1]])
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
             ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
                            fontsize=fontsize-2)
@@ -360,20 +360,16 @@ def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=13):
             ax1.grid(visible=True)
             ax1.set_yticks(prslocs_m)
             ax1.set_ylim(prsylim_m)
-            ax1.set_ylim([tim[0], tim.iloc[-1]])
-            ax1.set_xlabel('Pressure (hPa)', fontsize=fontsize-2)
+            ax1.set_xlim([tim.iloc[0], tim.iloc[-1]])
+            ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
             ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
             return ax1
     else:
         if hasW:
-            ax1.plot(tim, prs-prs, 'b-', linewidth=2, label='Pmin')
             ax2.plot(tim, wnd, 'r-', linewidth=2, label='Wmax')
             
-            h1, l1 = ax1.get_legend_handles_labels()
-            h2, l2 = ax2.get_legend_handles_labels()
-            
-            ax1.legend(h1+h2, l1+l2, loc='upper left', fontsize=fontsize)
+            ax2.legend(loc='upper left', fontsize=fontsize)
             ax1.set_title('intensity for TC {0:s} ({1:s})'.format(tc.name, tc.ID),
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
@@ -384,7 +380,7 @@ def plot_intensity(tc, ax=None, figsize=(10,5), fontsize=13):
             ax2.set_yticks(wndlocs_m)
             ax1.set_ylim(prsylim_m)
             ax2.set_ylim(wndylim_m)
-            ax1.set_xlim([tim[0], tim.iloc[-1]])
+            ax1.set_xlim([tim.iloc[0], tim.iloc[-1]])
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
             ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
                            fontsize=fontsize-2)
@@ -428,7 +424,7 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=13):
     """
     ax1 = None
     
-    if ax == None:
+    if ax is None:
         fig = plt.figure(figsize=figsize)
         ax1 = fig.add_subplot()
         ax2 = ax1.twinx()
@@ -438,6 +434,9 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=13):
     
     prslocs_m, wndlocs_m, prsylim_m, wndylim_m, \
         hasP, hasW = __get_intensity_range(tcs)
+    
+    tstr = min([tc.records['TIME'].min() for tc in tcs])
+    tend = max([tc.records['TIME'].max() for tc in tcs])
     
     if hasP:
         if hasW:
@@ -455,11 +454,8 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=13):
                     h1, l1 = ax1.get_legend_handles_labels()
                     h2, l2 = ax2.get_legend_handles_labels()
             
-            tstr = min([tc.records['TIME'].min() for tc in tcs])
-            tend = max([tc.records['TIME'].max() for tc in tcs])
-                
             ax1.legend(h1+h2, l1+l2, loc='upper left', fontsize=fontsize)
-            ax1.set_title('intensity for TC {0:s} ({1:s})'.format(tc.name, tc.ID),
+            ax1.set_title('intensity for TCSet ({0:d} TCs)'.format(len(tcs)),
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
             ax2.tick_params(axis='both', labelsize=fontsize-2)
@@ -471,7 +467,7 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=13):
             ax2.set_ylim(wndylim_m)
             ax1.set_xlim([tstr, tend])
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
-            ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
+            ax2.set_ylabel('Wind speed ({0:s})'.format(tcs[0].wndunit),
                            fontsize=fontsize-2)
             ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
@@ -490,18 +486,15 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=13):
                     h1, l1 = ax1.get_legend_handles_labels()
                     h2, l2 = ax2.get_legend_handles_labels()
             
-            tstr = min([tc.records['TIME'].min() for tc in tcs])
-            tend = max([tc.records['TIME'].max() for tc in tcs])
-            
             ax1.legend(loc='upper left', fontsize=fontsize)
-            ax1.set_title('intensity for TC {0:s} ({1:s})'.format(tc.name, tc.ID),
+            ax1.set_title('intensity for TCSet ({0:d} TCs)'.format(len(tcs)),
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
             ax1.grid(visible=True)
             ax1.set_yticks(prslocs_m)
             ax1.set_ylim(prsylim_m)
-            ax1.set_ylim([tim[0], tim.iloc[-1]])
-            ax1.set_xlabel('Pressure (hPa)', fontsize=fontsize-2)
+            ax1.set_xlim([tstr, tend])
+            ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
             ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
             return ax1
@@ -511,21 +504,15 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=13):
                 recs = tc.records
                 
                 wnd = recs['WND' ].where(recs['WND']!=undef)
-                prs = recs['PRS' ].where(recs['PRS']!=undef)
                 tim = recs['TIME']
                 
-                ax1.plot(tim, prs-prs, 'b-', linewidth=2, label='Pmin')
                 ax2.plot(tim, wnd, 'r-', linewidth=2, label='Wmax')
                 
                 if i == 0:
-                    h1, l1 = ax1.get_legend_handles_labels()
                     h2, l2 = ax2.get_legend_handles_labels()
             
-            tstr = min([tc.records['TIME'].min() for tc in tcs])
-            tend = max([tc.records['TIME'].max() for tc in tcs])
-            
-            ax1.legend(h1+h2, l1+l2, loc='upper left', fontsize=fontsize)
-            ax1.set_title('intensity for TC {0:s} ({1:s})'.format(tc.name, tc.ID),
+            ax2.legend(loc='upper left', fontsize=fontsize)
+            ax1.set_title('intensity for TCSet ({0:d} TCs)'.format(len(tcs)),
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
             ax2.tick_params(axis='both', labelsize=fontsize-2)
@@ -535,9 +522,9 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=13):
             ax2.set_yticks(wndlocs_m)
             ax1.set_ylim(prsylim_m)
             ax2.set_ylim(wndylim_m)
-            ax1.set_xlim([tim[0], tim.iloc[-1]])
+            ax1.set_xlim([tstr, tend])
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
-            ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
+            ax2.set_ylabel('Wind speed ({0:s})'.format(tcs[0].wndunit),
                            fontsize=fontsize-2)
             ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
@@ -545,12 +532,12 @@ def plot_intensities(tcs, ax=None, figsize=(10,5), fontsize=13):
         else:
             print('no valid intensity data, nothing can be plotted')
             
-            ax1.set_title('intensity for TC {0:s} ({1:s})'.format(tc.name, tc.ID),
+            ax1.set_title('intensity for TCSet ({0:d} TCs)'.format(len(tcs)),
                           fontsize=fontsize)
             ax1.tick_params(axis='both', labelsize=fontsize-2)
             ax2.tick_params(axis='both', labelsize=fontsize-2)
             ax1.set_ylabel('Pressure (hPa)', fontsize=fontsize-2)
-            ax2.set_ylabel('Wind speed ({0:s})'.format(tc.wndunit),
+            ax2.set_ylabel('Wind speed ({0:s})'.format(tcs[0].wndunit),
                            fontsize=fontsize-2)
             ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
             
@@ -581,10 +568,10 @@ def plot(tc, ax=None, figsize=(10,5), fontsize=13, size=60,
             __prepare_background(tc, xlint, ylint, figsize, fontsize,
                                  xlim, ylim, adjust=True)
     
-    if xlim == None:
+    if xlim is None:
         xlim = [xmin, xmax]
     
-    if ylim == None:
+    if ylim is None:
         ylim = [ymin, ymax]
     
     ax1.set_title('track of TC {0:s} ({1:s})'.format(TCplt.name, TCplt.ID),
@@ -608,7 +595,8 @@ def binning(lons, lats, var, ax=None, xlim=None, ylim=None, fontsize=13,
     """
     Binning scatter data into a Eulerian statistical map.
     """
-    if ax == None:
+    fig = None
+    if ax is None:
         fig, ax, _, (xmin, xmax, ymin, ymax) = \
         __prepare_background([lons.min(), lons.max(), lats.min(), lats.max()],
                              xlint, ylint, figsize, fontsize,
@@ -621,7 +609,7 @@ def binning(lons, lats, var, ax=None, xlim=None, ylim=None, fontsize=13,
     if fig:
         fig.colorbar(m1, ax=ax, orientation='horizontal', label='')
     
-    if title == None:
+    if title is None:
         title = 'Gridding stat.'
     
     ax.set_title(title)
@@ -645,22 +633,6 @@ def binning(lons, lats, var, ax=None, xlim=None, ylim=None, fontsize=13,
         ax3.set_xlabel('')
         ax2.set_ylabel('')
     
-    
-    # import seaborn as sns
-    
-    # return sns.kdeplot(lon, lat, ax=ax, weights=vs, shade_lowest=False,
-    #                    hist_kws={'weights': vs},
-    #                    levels=20, thresh=0.05, bw=0.1)
-    
-    # return sns.jointplot(lon, lat, vs, kind='kde')
-    
-    # grid, binY, binX = np.histogram2d(lat, lon, weights=vs, bins=(binY, binX))
-    
-    # re = xr.DataArray(grid, name='ACE', dims=['lat','lon'],
-    #                   coords={'lon':binX[:-1], 'lat':binY[:-1]})
-    
-    # return re
-    
     return ax, (x, y, z)
 
 
@@ -674,13 +646,13 @@ def binning_particle(p, var=None, xlim=None, ylim=None, fontsize=13,
     lat = p.records['LAT'].values
     
     vs = None
-    if var != None:
-        vsm  = p.records[var].values
-        vsm[vsm==undef] = 0
+    if var is not None:
+        vsm = p.records[var].values
+        mask = vsm != undef
         
-        vs  = vsm[vsm!=0]
-        lon = lon[vsm!=0]
-        lat = lat[vsm!=0]
+        vs  = vsm[mask]
+        lon = lon[mask]
+        lat = lat[mask]
     
     return binning(lon, lat, vs, None, xlim, ylim, fontsize, xlint, ylint,
                    figsize, reso, title, add_sides=True)
@@ -696,13 +668,13 @@ def binning_particles(ps, var=None, xlim=None, ylim=None, fontsize=13,
     lat = np.concatenate([p.records['LAT'].values for p in ps])
     
     vs = None
-    if var != None:
-        vsm  = np.concatenate([p.records[var].values for p in ps])
-        vsm[vsm==undef] = 0
+    if var is not None:
+        vsm = np.concatenate([p.records[var].values for p in ps])
+        mask = vsm != undef
         
-        vs  = vsm[vsm!=0]
-        lon = lon[vsm!=0]
-        lat = lat[vsm!=0]
+        vs  = vsm[mask]
+        lon = lon[mask]
+        lat = lat[mask]
     
     return binning(lon, lat, vs, None, xlim, ylim, fontsize, xlint, ylint,
                      figsize, reso, title, add_sides=add_sides)
@@ -711,21 +683,25 @@ def binning_particles(ps, var=None, xlim=None, ylim=None, fontsize=13,
 def plot_timeseries(ps, freq='monthly', ax=None, figsize=(10,5), fontsize=14,
                     linewidth=2, add_legend=True, legend_loc='upper left'):
     """
-    Plot the track and intensity of the given TC.
+    Plot the timeseries of TC number and ACE for the given TCSet.
 
     Parameters
     ----------
-    tc: TC
-        A single TC.
+    ps: TCSet
+        A TCSet.
+    freq: str
+        Frequency of statistics, should be ['monthly', 'yearly', 'annual'].
     ax: Axe
         Axe for plotting
+    figsize: tuple
+        Figure size.
     fontsize: int
-        Size of the font (title, label and legend)
+        Size of the font.
 
     Returns
     -------
     ax: Axe
-        minimum and maximum values
+        Plot axe handle.
     """
     import pandas as pd
     
@@ -738,12 +714,12 @@ def plot_timeseries(ps, freq='monthly', ax=None, figsize=(10,5), fontsize=14,
     df_num = pd.concat(df_num, axis=1).T.set_index('TIME')
     
     if freq == 'monthly':
-        ace = df_ace.resample('M').sum()
-        num = df_num.resample('M').count()
+        ace = df_ace.resample('ME').sum()
+        num = df_num.resample('ME').count()
         
     elif freq == 'yearly':
-        ace = df_ace.resample('Y').sum()
-        num = df_num.resample('Y').count()
+        ace = df_ace.resample('YE').sum()
+        num = df_num.resample('YE').count()
         
     elif freq == 'annual':
         ace = df_ace.groupby(df_ace.index.month).sum()
@@ -752,9 +728,6 @@ def plot_timeseries(ps, freq='monthly', ax=None, figsize=(10,5), fontsize=14,
     else:
         raise Exception('unknown frequency: ' + freq +
                         ', should be one of [monthly, yearly, annual]')
-    
-    # print(ace)
-    # print(num)
     
     import matplotlib.pyplot as plt
     
@@ -773,7 +746,7 @@ def plot_timeseries(ps, freq='monthly', ax=None, figsize=(10,5), fontsize=14,
     a2 = (ace['ACE']/1e5).plot.line(ax=ax2, color='b', marker='x')
     ax2.set_ylim(bottom=0)
     ax2.set_xlabel('Time', fontsize=fontsize-1)
-    ax2.set_ylabel('ACE', color='b', fontsize=fontsize-1)
+    ax2.set_ylabel(r'ACE ($\times 10^5$)', color='b', fontsize=fontsize-1)
     plt.setp(ax2.get_xticklabels(), fontsize=fontsize-3)
     plt.setp(ax2.get_yticklabels(), fontsize=fontsize-3)
     
@@ -794,11 +767,11 @@ Helper (private) methods are defined below
 def __transparent_jet():
     import matplotlib.colors as mcolors
     
-    cmap = plt.cm.get_cmap('jet')
+    cmap = plt.colormaps['jet']
     clrs = cmap(np.arange(cmap.N))
     
-    clrs[:16] = clrs[0] - clrs[0] + np.array([0, 0, 0, 0])
-        
+    clrs[:16] = np.array([0, 0, 0, 0])
+    
     return mcolors.LinearSegmentedColormap.from_list(cmap.name + "_trans",
                                                      clrs, cmap.N)
 
@@ -865,7 +838,7 @@ def __to_pplot(p):
             
             if  recs.loc[beg, 'LON'] - recs.loc[beg-1, 'LON'] < -300:
                 recs.loc[slc, 'LON'] = recs.loc[slc,   'LON'] +  360
-            elif recs.loc[beg,'LON'] - recs.loc[beg-1, 'LON'] >  300:
+            elif recs.loc[beg,'LON'] - recs.loc[beg-1,'LON'] >  300:
                 recs.loc[slc, 'LON'] = recs.loc[slc,   'LON'] -  360
             else:
                 raise Exception('should not reach here')
@@ -925,19 +898,19 @@ def __prepare_background(extent, xlint, ylint, figsize, fontsize,
         xmin, xmax = __get_p_range(pplot, 'LON')
         ymin, ymax = __get_p_range(pplot, 'LAT')
         
-        if xlim != None:
+        if xlim is not None:
             xmin, xmax = xlim
             
-        if ylim != None:
+        if ylim is not None:
             ymin, ymax = ylim
     
     elif isinstance(extent, ParticleSet):
         xmin, xmax = __get_ps_range(extent, 'LON')
         ymin, ymax = __get_ps_range(extent, 'LAT')
         
-        if xlim != None:
+        if xlim is not None:
             xmin, xmax = xlim
-        if ylim != None:
+        if ylim is not None:
             ymin, ymax = ylim
     
     else:
@@ -1050,7 +1023,6 @@ def __get_intensity_range(p):
         elif Pmin > 960:
             return prslocs_m, wndlocs_m, prsylim_m, wndylim_m, hasP, hasW
         else:
-#            print(prslocs_s, prsylim_s)
             return prslocs_s, wndlocs_s, prsylim_s, wndylim_s, hasP, hasW
     else:
         print('warning: no valid intensity records')
@@ -1214,4 +1186,3 @@ def __guess_lat_labels(extent, interval=None):
         else               : interval = 0.01
     
     return np.linspace(-90, 90, int(180.0/interval + 1))
-

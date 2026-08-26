@@ -1,0 +1,9 @@
+numpy
+pandas
+matplotlib
+cartopy
+xarray
+scikit-learn
+nbsphinx
+numpydoc
+sphinx-rtd-theme

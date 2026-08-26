@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on 2020.08.01
+IO module of besttracks: parsers for tropical cyclone and drifter datasets.
 
-@author: MiniUFO
-Copyright 2018. All rights reserved. Use is subject to license terms.
+Provides ``parse_TCs`` and agency-specific parsers (JTWC, CMA, JMA, NHC,
+IBTrACS, GDP drifters) that convert raw best-track files into the
+``TCSet`` / ``DrifterSet`` data structures defined in :mod:`besttracks.core`.
 """
 from typing import Union, Optional, Callable, List, Sequence  # , Any, Dict, Tuple
 import pandas as pd
@@ -68,7 +69,8 @@ def parse_TCs(
 
     Returns
     -------
-    list of TC (data struct of a namedtuple)
+    TCSet
+        A TCSet containing parsed TCs.
     """
     agency = agency.upper()
 
@@ -253,6 +255,10 @@ def parse_GDPDrifters(
         data = pd.concat([chunk.loc[rec_cond] for chunk in chunks])
     else:
         data = pd.concat(chunks)
+
+    # Parse the GDP-style datetime ("MM DD.ddd YYYY") after reading, since the
+    # fractional-day format has no standard strptime directive.
+    data['TIME'] = data['TIME'].apply(__parse_datetime)
 
     # Return raw DataFrame if requested
     if rawframe:
@@ -554,7 +560,7 @@ def parseCMA(
         raise OSError(f"No files found matching pattern: {filenames}")
 
     records = []
-
+    
     for path in paths:
         try:
             # Read file content
@@ -603,8 +609,9 @@ def parseCMA(
                         if ID == '0000':
                             ID = str(year) + '00'
                         else:
-                            # Add century to ID
-                            ID = str(year)[:2] + ID
+                            # Prepend century prefix to the 4-digit ID
+                            # (year is a 4-char string like '1949' from filename)
+                            ID = str(year)[:2] + ID.zfill(4)
 
                         # Update IDtmp to include full year
                         IDtmp = str(year) + IDtmp[2:]
@@ -723,7 +730,9 @@ def parseJMA(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFram
                             time_obj = datetime.strptime(tokens[0], "%y%m%d%H")
                             year = time_obj.year
 
-                            # Handle years in the range 1951-1968
+                            # strptime %y pivot is 1969 (00-68 -> 2000-2068,
+                            # 69-99 -> 1969-1999).  JMA data starts from 1951,
+                            # so years 51-68 need to be corrected to 1951-1968.
                             if 51 <= int(tokens[0][:2]) <= 68:
                                 year -= 100
 
@@ -740,7 +749,7 @@ def parseJMA(filename: Union[str, Path], encoding: str = 'utf-8') -> pd.DataFram
                                 # Parse data fields
                                 TIME = datetime.strptime(tokens[0], "%y%m%d%H")
 
-                                # Handle years in the range 1951-1968
+                                # Correct years 51-68 from 205x to 195x (see above)
                                 if 51 <= int(tokens[0][:2]) <= 68:
                                     TIME = TIME.replace(year=TIME.year-100)
 
@@ -1002,10 +1011,15 @@ def __concat_files(paths: Union[str, Sequence[Union[str, Path]]], encoding: str 
         A single string containing all the content of files.
     """
     if isinstance(paths, str):
-        paths = sorted(glob(paths))
+        # Only glob if the string contains wildcard characters;
+        # otherwise treat it as a single literal path.
+        if any(c in paths for c in '*?['):
+            paths = sorted(glob(paths))
+        else:
+            paths = [paths]
     else:
         paths = [str(p) if isinstance(p, Path) else p for p in paths]
-
+    
     if not paths:
         raise OSError("No files to open")
 
@@ -1015,8 +1029,8 @@ def __concat_files(paths: Union[str, Sequence[Union[str, Path]]], encoding: str 
             lines = [line if line.endswith(
                 '\n') else line + '\n' for line in f]
             result.extend(lines)
-
-    return re
+    
+    return result
 
 
 def __get_type_JMA(code: str) -> str:
@@ -1107,10 +1121,14 @@ def __get_type_CMA(code: str) -> str:
         raise ValueError(f'Unknown code: {code}')
 
 
-def __get_type_NHC(code):
+def __get_type_NHC(code: str) -> str:
     """
     Get the intensity category according to the status of system defined by
     "National Hurricane Center".
+
+    Unlike CMA/JMA whose type codes are numeric, NHC already uses letter
+    abbreviations (e.g. 'TD', 'TS', 'HU', 'EX'), so the code is returned
+    as-is.
 
     Reference:
     https://www.nhc.noaa.gov/data/hurdat/hurdat2-format-nov2019.pdf

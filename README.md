@@ -1,5 +1,12 @@
 # besttracks
 
+[![Docs](https://readthedocs.org/projects/besttracks/badge/?version=latest)](https://besttracks.readthedocs.io/en/latest/)
+[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![PyPI version](https://badge.fury.io/py/besttracks.svg)](https://badge.fury.io/py/besttracks)
+[![Publish to PyPI](https://github.com/miniufo/besttracks/actions/workflows/PyPI-publish.yml/badge.svg)](https://github.com/miniufo/besttracks/actions/workflows/PyPI-publish.yml)
+[![pytest](https://github.com/miniufo/besttracks/actions/workflows/tests.yml/badge.svg)](https://github.com/miniufo/besttracks/actions/workflows/tests.yml)
+
 ![tracks plot](https://raw.githubusercontent.com/miniufo/besttracks/master/pics/Global_TC_tracks.png)
 
 
@@ -138,7 +145,7 @@ TCs_CMA.binning()
 Manipulating a single `TC` is also simple:
 ```python
 # Selecting a single TC
-tc = TCs_cma[-1]
+tc = TCs_CMA[-1]
 
 # Briefly descibe the TC
 print(tc)
