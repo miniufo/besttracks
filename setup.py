@@ -29,8 +29,11 @@ setup(
     license='MIT',
 
     classifiers=[
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7'
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
     ],
 
     keywords='best track tropical cyclone besttracks TC',
@@ -43,6 +46,7 @@ setup(
         "matplotlib",
         "cartopy>=0.22.0",
         "xarray",
-        "netcdf4"
+        "netcdf4",
+        "scikit-learn",
     ],
 )
