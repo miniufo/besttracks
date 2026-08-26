@@ -23,14 +23,14 @@ def _make_tc_records(n=5, start_lon=125.0, start_lat=18.0):
     lons = start_lon + np.arange(n) * 0.5
     lats = start_lat + np.arange(n) * 0.3
     wnd = np.array([20, 30, 40, 35, 25], dtype=float)
-    slp = np.array([1000, 990, 980, 985, 995], dtype=float)
+    prs = np.array([1000, 990, 980, 985, 995], dtype=float)
 
     return pd.DataFrame({
         'TIME': times,
         'LON': lons,
         'LAT': lats,
         'WND': wnd,
-        'SLP': slp,
+        'PRS': prs,
     })
 
 
@@ -88,7 +88,8 @@ class TestParticle:
         """sel() filters records by a condition."""
         p = single_particle
         sub = p.sel(lambda df: df['WND'] > 25)
-        assert len(sub) == 4  # only the record with WND=20 is filtered out
+        # WND=[20,30,40,35,25], >25 → 30,40,35 = 3 records
+        assert len(sub) == 3
 
     def test_copy(self, single_particle):
         p2 = single_particle.copy()
@@ -115,11 +116,11 @@ class TestTC:
                wndunit='mph', fcstTime=0, records=tc_records)
 
     def test_duration(self, single_tc):
-        """duration returns the time span of the TC."""
+        """duration returns the time span of the TC in days."""
         dur = single_tc.duration()
         assert dur is not None
-        # 5 records at 6h intervals → 24 hours
-        assert dur == pd.Timedelta(hours=24)
+        # 5 records at 6h intervals → 24 hours = 1.0 day
+        assert abs(float(dur) - 1.0) < 1e-6
 
     def test_peak_intensity(self, single_tc):
         """peak_intensity returns max wind."""
@@ -131,8 +132,11 @@ class TestTC:
         original_wnd = single_tc.records['WND'].values.copy()
         single_tc.change_wind_unit(unit='m/s')
         assert single_tc.wndunit == 'm/s'
-        # knot → m/s: 1 knot = 0.51444 m/s, so values should increase
-        assert (single_tc.records['WND'].values[1] > original_wnd[1])
+        # knot → m/s: 1 knot = 0.51444 m/s, so values should decrease
+        converted = single_tc.records['WND'].values
+        # skip undef entries; all fixture winds are valid
+        valid = original_wnd != -9999.0
+        assert np.all(converted[valid] < original_wnd[valid])
 
 
 # ---------------------------------------------------------------------------

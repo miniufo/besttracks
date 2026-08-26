@@ -280,26 +280,26 @@ class TC(Particle):
     def change_wind_unit(self, unit=None):
         """
         Change (in-place) the wind unit between knot and m/s.
-        
+
         Parameters
         ----------
         unit: str
             Either knot or m/s.
         """
         recs = self.records
-        
+
         if unit is None or unit != self.wndunit:
             if self.wndunit == 'knot':
-                recs['WND'].where(recs['WND']==undef,
-                                  recs['WND'] * 0.51444, # to m/s
-                                  inplace=True)
+                # knot → m/s: keep undef, convert the rest
+                recs.loc[:, 'WND'] = recs['WND'].where(
+                    recs['WND'] == undef, recs['WND'] * 0.51444)
                 self.wndunit = 'm/s'
             else:
-                recs['WND'].where(recs['WND']==undef,
-                                  recs['WND'] / 0.51444, # to knot
-                                  inplace=True)
+                # m/s → knot
+                recs.loc[:, 'WND'] = recs['WND'].where(
+                    recs['WND'] == undef, recs['WND'] / 0.51444)
                 self.wndunit = 'knot'
-        
+
         return self
         
     
